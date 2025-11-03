@@ -34,8 +34,6 @@ jail-forge/
 ├── shared/                   # Shared resources across all applications
 │   ├── roles/
 │   │   └── jail-base/       # Base jail configuration (ZFS, networking)
-│   ├── scripts/
-│   │   └── generate-secrets.sh  # Secret generation utility
 │   └── docs/
 │       ├── JAIL-NETWORKING.md   # Networking patterns
 │       ├── BACKUP-STRATEGIES.md # Backup approaches
@@ -50,6 +48,7 @@ jail-forge/
 │   ├── group_vars/
 │   ├── roles/
 │   ├── playbooks/
+│   ├── scripts/
 │   └── docs/
 │
 └── <future-apps>/            # More applications coming soon!
@@ -136,15 +135,6 @@ Base jail configuration used by all applications:
 - Network setup
 - Nullfs mounts
 - Basic jail lifecycle
-
-### Scripts
-
-#### `generate-secrets.sh`
-Generates secure random secrets for application deployment.
-
-```bash
-../shared/scripts/generate-secrets.sh
-```
 
 ### Documentation
 
