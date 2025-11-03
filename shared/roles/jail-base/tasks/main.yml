@@ -1,0 +1,149 @@
+---
+# Main tasks for jail-base role
+- name: Check if jail already exists
+  command: jls -j {{ jail_name }}
+  register: jail_check
+  changed_when: false
+  failed_when: false
+
+- name: Create ZFS dataset for jail
+  community.general.zfs:
+    name: "{{ jail_zfs_dataset }}"
+    state: present
+    extra_zfs_properties:
+      mountpoint: "{{ jail_path }}"
+      compression: lz4
+      quota: 10G
+  when: jail_zfs_enabled
+
+- name: Clone base system to jail
+  shell: >
+    cp -Rp {{ jail_base_path }}/* {{ jail_path }}/
+  args:
+    creates: "{{ jail_path }}/bin"
+  when: jail_check.rc != 0
+
+- name: Create jail directories
+  file:
+    path: "{{ jail_path }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - dev
+    - tmp
+    - var/tmp
+  when: jail_check.rc != 0
+
+- name: Set proper permissions on jail directories
+  file:
+    path: "{{ jail_path }}/{{ item.path }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: 'tmp', mode: '1777' }
+    - { path: 'var/tmp', mode: '1777' }
+  when: jail_check.rc != 0
+
+- name: Configure jail resolv.conf
+  copy:
+    src: /etc/resolv.conf
+    dest: "{{ jail_path }}/etc/resolv.conf"
+    remote_src: yes
+
+- name: Create fstab directory on host
+  file:
+    path: "/usr/local/etc/jail.fstab.d"
+    state: directory
+    mode: '0755'
+  when: jail_mounts | length > 0
+
+- name: Create host-side mount directories
+  file:
+    path: "{{ item.src }}"
+    state: directory
+    mode: '0755'
+  loop: "{{ jail_mounts }}"
+  when: jail_mounts | length > 0
+
+- name: Create jail-side mount points
+  file:
+    path: "{{ jail_path }}{{ item.dest }}"
+    state: directory
+    mode: '0755'
+  loop: "{{ jail_mounts }}"
+  when: jail_mounts | length > 0
+
+- name: Create jail fstab file
+  template:
+    src: fstab.j2
+    dest: "/usr/local/etc/jail.fstab.d/{{ jail_name }}.fstab"
+    mode: '0644'
+  when: jail_mounts | length > 0
+
+- name: Create jail configuration file
+  template:
+    src: jail-config.conf.j2
+    dest: "/usr/local/etc/jail.conf.d/{{ jail_name }}.conf"
+    mode: '0644'
+
+- name: Start jail
+  command: jail -f /usr/local/etc/jail.conf.d/{{ jail_name }}.conf -c {{ jail_name }}
+  when: jail_check.rc != 0
+  register: jail_start
+  failed_when: false
+
+- name: Wait for jail to be fully started
+  wait_for:
+    timeout: 10
+  delegate_to: localhost
+  when: jail_check.rc != 0
+
+- name: Update jail to latest patches
+  command: >
+    jexec {{ jail_name }}
+    freebsd-update --not-running-from-cron fetch install
+  register: jail_update
+  changed_when: "'No updates' not in jail_update.stdout"
+  failed_when: false
+
+- name: Bootstrap pkg in jail
+  command: jexec {{ jail_name }} env ASSUME_ALWAYS_YES=yes pkg bootstrap
+  args:
+    creates: "{{ jail_path }}/usr/local/sbin/pkg"
+
+- name: Update pkg database in jail
+  command: jexec {{ jail_name }} pkg update -f
+  changed_when: false
+
+- name: Install base packages in jail
+  command: >
+    jexec {{ jail_name }} pkg install -y
+    python311 py311-pip ca_root_nss curl bash
+
+- name: Configure jail rc.conf
+  template:
+    src: rc.conf.j2
+    dest: "{{ jail_path }}/etc/rc.conf"
+    mode: '0644'
+
+- name: Get current jail_list
+  shell: sysrc -n jail_list 2>/dev/null || echo ""
+  register: current_jail_list
+  changed_when: false
+  when: jail_autostart
+
+- name: Build new jail_list
+  set_fact:
+    new_jail_list: "{{ (current_jail_list.stdout.split() + [jail_name]) | unique | join(' ') }}"
+  when: jail_autostart
+
+- name: Ensure jail is set to autostart
+  command: sysrc jail_list="{{ new_jail_list }}"
+  when: jail_autostart and new_jail_list is defined
+
+- name: Display jail information
+  debug:
+    msg:
+      - "Jail {{ jail_name }} created successfully"
+      - "IP Address: {{ jail_ip }}"
+      - "Path: {{ jail_path }}"
+      - "Access: jexec {{ jail_name }} /bin/sh"

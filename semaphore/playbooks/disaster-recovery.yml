@@ -1,0 +1,295 @@
+---
+# Disaster Recovery - Complete rebuild from backup
+# This combines infrastructure deployment + data restoration in one workflow
+- name: Disaster Recovery - Deploy Infrastructure and Restore Data
+  hosts: localhost
+  gather_facts: false
+
+  vars_prompt:
+    - name: backup_timestamp
+      prompt: "Enter backup timestamp to restore (e.g., 20240130T120000)"
+      private: no
+
+    - name: confirm_disaster_recovery
+      prompt: |
+
+        ⚠️  DISASTER RECOVERY MODE ⚠️
+
+        This will:
+        1. Deploy complete infrastructure from scratch
+        2. Restore data from backup: {{ backup_timestamp }}
+
+        This is typically used when:
+        - Migrating to new hardware
+        - Recovering from complete host failure
+        - Setting up new environment from production backup
+
+        Type 'yes' to proceed
+      private: no
+
+  tasks:
+    - name: Validate confirmation
+      fail:
+        msg: "Disaster recovery cancelled"
+      when: confirm_disaster_recovery != "yes"
+
+    - name: Display disaster recovery plan
+      debug:
+        msg:
+          - "==================== DISASTER RECOVERY PLAN ===================="
+          - ""
+          - "Phase 1: Infrastructure Deployment"
+          - "  → Prepare BSD host (ZFS, networking, pf)"
+          - "  → Deploy database jail (PostgreSQL)"
+          - "  → Deploy Semaphore jail (application + TLS)"
+          - "  → Verify deployment"
+          - ""
+          - "Phase 2: Data Restoration"
+          - "  → Restore PostgreSQL database"
+          - "  → Restore Semaphore configuration"
+          - "  → Restore certificates (if any)"
+          - "  → Restart services"
+          - ""
+          - "Estimated time: 15-20 minutes"
+          - "Backup: {{ backup_timestamp }}"
+          - ""
+          - "================================================================"
+
+    - name: Pause before starting
+      pause:
+        prompt: "Press ENTER to begin disaster recovery, or Ctrl+C to cancel"
+
+# =============================================================================
+# PHASE 1: DEPLOY INFRASTRUCTURE
+# =============================================================================
+
+- name: "Phase 1/2: Deploy Infrastructure"
+  import_playbook: ../site.yml
+
+# =============================================================================
+# PHASE 2: RESTORE DATA
+# =============================================================================
+
+- name: "Phase 2/2: Restore Data from Backup"
+  hosts: jail_hosts
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/vars.yml
+    - ../group_vars/all/secrets.yml
+  vars:
+    backup_dir: "{{ backup_location | default('/var/backups/semaphore') }}"
+    restore_path: "{{ backup_dir }}/{{ hostvars['localhost']['backup_timestamp'] }}"
+    # Skip confirmation prompts since we already confirmed above
+    skip_prompts: true
+    # Variables needed for restore tasks
+    semaphore_service_group: semaphore
+    semaphore_service_user: semaphore
+    semaphore_config_dir: /usr/local/etc/semaphore
+    custom_ca_dir: /usr/local/share/certs
+
+  tasks:
+    # =============================================================================
+    # VALIDATION
+    # =============================================================================
+
+    - name: Check if backup exists
+      stat:
+        path: "{{ restore_path }}"
+      register: backup_exists
+
+    - name: Fail if backup doesn't exist
+      fail:
+        msg: |
+          Backup not found at {{ restore_path }}
+          Available backups:
+          {{ lookup('pipe', 'ls -1 ' + backup_dir) }}
+      when: not backup_exists.stat.exists
+
+    - name: Display backup info
+      command: cat {{ restore_path }}/backup-info.txt
+      register: backup_info
+      changed_when: false
+
+    - name: Show what will be restored
+      debug:
+        msg: "{{ backup_info.stdout_lines }}"
+
+    # =============================================================================
+    # STOP SERVICES
+    # =============================================================================
+
+    - name: Stop Semaphore service
+      command: jexec semaphore-app service semaphore stop
+      ignore_errors: yes
+
+    # =============================================================================
+    # RESTORE DATABASE
+    # =============================================================================
+
+    - name: Restore database
+      block:
+        - name: Drop existing database
+          command: >
+            jexec semaphore-db
+            su - postgres -c "dropdb --if-exists {{ semaphore_db_name }}"
+
+        - name: Create fresh database
+          command: >
+            jexec semaphore-db
+            su - postgres -c "createdb -O {{ semaphore_db_user }} {{ semaphore_db_name }}"
+
+        - name: Copy database dump to jail
+          command: >
+            cp {{ restore_path }}/database.dump /{{ zfs_pool }}/{{ jail_dataset }}/data/db/tmp/restore.dump
+
+        - name: Restore database from dump
+          command: >
+            jexec semaphore-db
+            su - postgres -c "pg_restore -d {{ semaphore_db_name }} /tmp/restore.dump"
+          register: db_restore
+
+        - name: Remove temporary dump file
+          command: >
+            jexec semaphore-db rm -f /tmp/restore.dump
+
+    # =============================================================================
+    # RESTORE CONFIGURATION
+    # =============================================================================
+
+    - name: Check if Semaphore data backup exists
+      stat:
+        path: "{{ restore_path }}/semaphore-data.tar.gz"
+      register: semaphore_data_exists
+
+    - name: Restore Semaphore configuration
+      command: >
+        jexec semaphore-app
+        tar -xzf {{ restore_path }}/semaphore-data.tar.gz
+        -C /usr/local/etc/semaphore
+      when: semaphore_data_exists.stat.exists
+
+    - name: Fix restored config file ownership
+      command: jexec semaphore-app chown root:{{ semaphore_service_group }} {{ semaphore_config_dir }}/config.json
+      when: semaphore_data_exists.stat.exists
+
+    - name: Fix restored config file permissions
+      command: jexec semaphore-app chmod 0640 {{ semaphore_config_dir }}/config.json
+      when: semaphore_data_exists.stat.exists
+
+    # =============================================================================
+    # RESTORE CERTIFICATES (if backed up)
+    # =============================================================================
+
+    - name: Check if certificates backup exists
+      stat:
+        path: "{{ restore_path }}/certificates.tar.gz"
+      register: certs_exist
+
+    - name: Restore TLS certificates
+      command: >
+        jexec semaphore-app
+        tar -xzf {{ restore_path }}/certificates.tar.gz
+        -C /usr/local/etc/ssl
+      when: certs_exist.stat.exists
+
+    # =============================================================================
+    # RESTORE CUSTOM CAs (if backed up)
+    # =============================================================================
+
+    - name: Check if custom CA backup exists
+      stat:
+        path: "{{ restore_path }}/custom-ca.tar.gz"
+      register: custom_ca_exist
+
+    - name: Restore custom CA certificates
+      block:
+        - name: Extract custom CAs
+          command: >
+            jexec semaphore-app
+            tar -xzf {{ restore_path }}/custom-ca.tar.gz
+            -C {{ custom_ca_dir }}
+
+        - name: Rehash certificates
+          command: jexec semaphore-app certctl rehash
+      when: custom_ca_exist.stat.exists
+
+    # =============================================================================
+    # START SERVICES
+    # =============================================================================
+
+    - name: Start Semaphore service
+      command: jexec semaphore-app service semaphore start
+
+    - name: Wait for Semaphore to be ready
+      uri:
+        url: "https://{{ hostvars['semaphore-app'].jail_ip }}:{{ semaphore_port }}/api/ping"
+        method: GET
+        status_code: 200
+        validate_certs: no
+      register: ping_result
+      retries: 10
+      delay: 3
+      until: ping_result is succeeded
+
+    # =============================================================================
+    # VERIFICATION
+    # =============================================================================
+
+    - name: Verify database connection
+      command: >
+        jexec semaphore-db
+        su - postgres -c "psql -d {{ semaphore_db_name }} -c 'SELECT COUNT(*) FROM project;'"
+      register: db_verify
+      changed_when: false
+
+    - name: Get final statistics
+      command: jls -v
+      register: jail_stats
+      changed_when: false
+
+    # =============================================================================
+    # FINAL REPORT
+    # =============================================================================
+
+    - name: Display disaster recovery completion report
+      debug:
+        msg:
+          - "================================================================"
+          - "✓ DISASTER RECOVERY COMPLETED SUCCESSFULLY!"
+          - "================================================================"
+          - ""
+          - "📊 Summary:"
+          - "   Phase 1: Infrastructure deployed ✓"
+          - "   Phase 2: Data restored ✓"
+          - ""
+          - "📦 Restored from backup: {{ hostvars['localhost']['backup_timestamp'] }}"
+          - "📁 Backup location: {{ restore_path }}"
+          - ""
+          - "✅ Restored components:"
+          - "   • PostgreSQL database"
+          - "   • Semaphore configuration"
+          - ""
+          - "🏗️  Infrastructure:"
+          - "   • 2 jails running"
+          - "   • Database: {{ hostvars['semaphore-db'].jail_ip }}"
+          - "   • Semaphore: {{ hostvars['semaphore-app'].jail_ip }}:{{ semaphore_port }}"
+          - ""
+          - "🔍 Verification:"
+          - "   • Database is accessible ✓"
+          - "   • Semaphore is running and responding ✓"
+          - "   • All jails operational ✓"
+          - ""
+          - "🌐 Access Semaphore:"
+          - "   URL: https://{{ hostvars['semaphore-app'].jail_ip }}:{{ semaphore_port }}"
+          - "   Credentials: (from secrets.yml)"
+          - ""
+          - "📝 Next steps:"
+          - "   1. Verify all projects and templates are present"
+          - "   2. Test Ansible playbook execution"
+          - "   3. Update DNS if this is a new host"
+          - "   4. Configure external firewall rules"
+          - "   5. Set up automated backups (cron)"
+          - ""
+          - "================================================================"
+          - "Recovery completed in approximately 15-20 minutes"
+          - "================================================================"

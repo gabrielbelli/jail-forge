@@ -1,0 +1,17 @@
+---
+# Variables specific to jail hosts (the physical/virtual BSD machines)
+
+# Jail management
+jail_enable: true
+jail_parallel_start: 2
+
+# Security settings
+pf_enable: true
+
+# Backup configuration
+backup_enabled: true
+backup_retention_days: 30
+backup_dir: /var/backups/semaphore
+
+# Monitoring (optional)
+monitoring_enabled: false

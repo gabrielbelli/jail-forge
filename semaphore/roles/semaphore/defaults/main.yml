@@ -1,0 +1,38 @@
+---
+# Default variables for semaphore role
+semaphore_version: "v2.16.37"
+semaphore_arch: "freebsd_amd64"
+semaphore_install_dir: /usr/local/bin
+semaphore_config_dir: /usr/local/etc/semaphore
+semaphore_tmp_dir: /var/tmp/semaphore
+semaphore_port: 3000
+semaphore_cookie_hash: "changeme_random_hash"
+semaphore_cookie_encryption: "changeme_random_encryption_key"
+semaphore_access_key_encryption: "changeme_access_key_encryption"
+
+# Database configuration
+semaphore_db_dialect: postgres
+semaphore_db_host: "{{ hostvars['semaphore-db'].jail_ip }}"
+semaphore_db_port: 5432
+semaphore_db_name: semaphore
+semaphore_db_user: semaphore
+semaphore_db_password: changeme
+
+# Admin user
+semaphore_admin_user: admin
+semaphore_admin_email: admin@example.com
+semaphore_admin_name: "Admin User"
+semaphore_admin_password: changeme
+
+# Service configuration
+semaphore_service_user: semaphore
+semaphore_service_group: semaphore
+
+# Additional packages
+semaphore_required_packages:
+  - git
+  - py311-ansible-core
+  - ca_root_nss
+  - curl
+  - bash
+  - gtar

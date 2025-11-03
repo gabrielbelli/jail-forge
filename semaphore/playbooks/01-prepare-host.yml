@@ -1,0 +1,108 @@
+---
+# Prepare BSD host for jail deployment
+- name: Prepare BSD Host for Jails
+  hosts: jail_hosts
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/secrets.yml
+    - ../group_vars/all/vars.yml
+
+  tasks:
+    - name: Ensure ZFS is available
+      command: zfs list
+      register: zfs_check
+      changed_when: false
+      failed_when: zfs_check.rc != 0
+
+    - name: Debug - Show zfs_pool variable
+      debug:
+        msg: "ZFS Pool: {{ zfs_pool }}, Jail Dataset: {{ jail_dataset }}"
+
+    - name: Create ZFS datasets for jails
+      community.general.zfs:
+        name: "{{ item }}"
+        state: present
+        extra_zfs_properties:
+          mountpoint: "/{{ item }}"
+          compression: lz4
+      loop:
+        - "{{ zfs_pool }}/{{ jail_dataset }}"
+        - "{{ zfs_pool }}/{{ jail_dataset }}/base"
+        - "{{ zfs_pool }}/{{ jail_dataset }}/data"
+        - "{{ zfs_pool }}/{{ jail_dataset }}/data/db"
+        - "{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore"
+
+    - name: Create jail directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /usr/local/etc/jail.conf.d
+        - /var/log/jails
+
+    - name: Download FreeBSD base for jails
+      command: >
+        fetch -o /tmp/base.txz
+        https://download.freebsd.org/ftp/releases/{{ freebsd_arch }}/{{ freebsd_version }}/base.txz
+      args:
+        creates: /tmp/base.txz
+
+    - name: Extract base system to ZFS dataset
+      command: >
+        tar -xf /tmp/base.txz -C /{{ zfs_pool }}/{{ jail_dataset }}/base
+      args:
+        creates: "/{{ zfs_pool }}/{{ jail_dataset }}/base/bin"
+
+    - name: Update base system
+      command: >
+        freebsd-update -b /{{ zfs_pool }}/{{ jail_dataset }}/base
+        --not-running-from-cron fetch install
+      register: update_result
+      changed_when: "'No updates' not in update_result.stdout"
+      failed_when: false
+
+    - name: Enable jail service in rc.conf
+      lineinfile:
+        path: /etc/rc.conf
+        regexp: '^jail_enable='
+        line: 'jail_enable="YES"'
+        create: yes
+
+    - name: Configure jail.conf
+      template:
+        src: ../roles/jail-base/templates/jail.conf.j2
+        dest: /etc/jail.conf
+        mode: '0644'
+
+    - name: Ensure pf is configured for jail networking
+      blockinfile:
+        path: /etc/pf.conf
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED - Semaphore"
+        block: |
+          # Filtering rules for Semaphore jails (IP alias mode - no NAT needed)
+          # Allow Semaphore web access
+          pass in on {{ jail_interface }} proto tcp to {{ jail_ip_semaphore }} port {{ semaphore_port }}
+
+          # Allow PostgreSQL access from Semaphore jail
+          pass in on {{ jail_interface }} proto tcp from {{ jail_ip_semaphore }} to {{ jail_ip_database }} port 5432
+
+          # Allow jails outbound access
+          pass out on {{ jail_interface }} from { {{ jail_ip_database }}, {{ jail_ip_semaphore }} }
+      notify: reload pf
+
+    - name: Enable pf in rc.conf
+      lineinfile:
+        path: /etc/rc.conf
+        regexp: '^pf_enable='
+        line: 'pf_enable="YES"'
+        create: yes
+
+    - name: Start pf if not running
+      shell: pfctl -e || true
+      changed_when: false
+
+  handlers:
+    - name: reload pf
+      command: pfctl -f /etc/pf.conf

@@ -1,0 +1,20 @@
+#!/bin/sh
+# Restart Semaphore in jail after log rotation
+# Managed by Ansible - DO NOT EDIT MANUALLY
+# Used by newsyslog for log rotation
+#
+# NOTE: Semaphore does not support signal-based log reopening,
+# so the service must be restarted after rotation.
+
+JAIL_NAME="{{ jail_name }}"
+
+logger -t semaphore-logrotate "Restarting Semaphore in jail $JAIL_NAME after log rotation"
+
+jexec "$JAIL_NAME" service semaphore restart 2>&1 | logger -t semaphore-logrotate
+
+if [ $? -eq 0 ]; then
+    logger -t semaphore-logrotate "Successfully restarted Semaphore in jail $JAIL_NAME"
+else
+    logger -t semaphore-logrotate "Failed to restart Semaphore in jail $JAIL_NAME"
+    exit 1
+fi

@@ -1,0 +1,21 @@
+---
+# Variables common to all jails
+
+# Jail defaults
+jail_autostart: true
+jail_vnet: false
+jail_devfs_ruleset: 4
+
+# Security
+jail_allow_raw_sockets: false
+jail_allow_mount: true
+jail_allow_mount_devfs: true
+jail_allow_mount_nullfs: true
+jail_allow_mount_zfs: false
+
+# Services
+jail_syslog_enabled: true
+jail_sendmail_enabled: false
+
+# Python
+ansible_python_interpreter: /usr/local/bin/python3.9

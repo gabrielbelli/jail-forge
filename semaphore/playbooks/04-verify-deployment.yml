@@ -1,0 +1,83 @@
+---
+# Verify deployment is successful
+- name: Verify Semaphore Deployment
+  hosts: jail_hosts
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all/secrets.yml
+    - ../group_vars/all/vars.yml
+
+  tasks:
+    - name: Check jail status
+      command: jls -v
+      register: jails_status
+      changed_when: false
+
+    - name: Display running jails
+      debug:
+        var: jails_status.stdout_lines
+
+    - name: Verify database jail is running
+      command: jls -j semaphore-db
+      register: db_jail_check
+      changed_when: false
+      failed_when: db_jail_check.rc != 0
+
+    - name: Verify Semaphore jail is running
+      command: jls -j semaphore-app
+      register: app_jail_check
+      changed_when: false
+      failed_when: app_jail_check.rc != 0
+
+    - name: Test PostgreSQL connectivity from host
+      command: >
+        jexec semaphore-db
+        su - postgres -c "psql -c 'SELECT version();'"
+      register: db_test
+      changed_when: false
+
+    - name: Test Semaphore HTTPS endpoint
+      uri:
+        url: "https://{{ jail_ip_semaphore }}:{{ semaphore_port }}/api/ping"
+        method: GET
+        status_code: 200
+        validate_certs: no
+      register: semaphore_ping
+      retries: 5
+      delay: 10
+      until: semaphore_ping is succeeded
+
+    - name: Check certificate details
+      command: >
+        jexec semaphore-app
+        openssl x509 -in {{ tls_cert_file }} -noout -dates -subject
+      register: cert_details
+      changed_when: false
+
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "✓ Deployment successful!"
+          - ""
+          - "🔒 HTTPS Access:"
+          - "   URL: https://{{ jail_ip_semaphore }}:{{ semaphore_port }}"
+          - "   Certificate: {{ 'Self-signed' if tls_cert_strategy == 'generate' else 'Existing' }} ({{ tls_cert_lifetime_days if tls_cert_strategy == 'generate' else 'N/A' }} days validity)"
+          - "   {{ cert_details.stdout_lines }}"
+          - ""
+          - "⚠️  Browser Warning: Self-signed certificates will show a security warning"
+          - "   This is normal - click 'Advanced' and 'Proceed' to access"
+          - ""
+          - "📊 Infrastructure:"
+          - "   Database:  {{ jail_ip_database }}"
+          - "   Semaphore: {{ jail_ip_semaphore }}:{{ semaphore_port }} (HTTPS)"
+          - ""
+          - "🔑 Default Credentials:"
+          - "   Username: {{ semaphore_admin_user }}"
+          - "   Password: {{ semaphore_admin_password }}"
+          - ""
+          - "⚠️  IMPORTANT: Change the default password immediately!"
+          - ""
+          - "📝 Certificate Management:"
+          - "   Location: {{ tls_cert_file }}"
+          - "   To use your own certs, see group_vars/all/secrets.yml"
+          - "   To regenerate: delete cert files and redeploy"

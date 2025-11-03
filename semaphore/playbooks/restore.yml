@@ -1,0 +1,250 @@
+---
+# Restore Semaphore Data from Backup
+# This assumes infrastructure is already deployed via IaC
+- name: Restore Semaphore Data from Backup
+  hosts: jail_hosts
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/vars.yml
+    - ../group_vars/all/secrets.yml
+
+  vars_prompt:
+    - name: backup_timestamp
+      prompt: "Enter backup timestamp to restore (e.g., 20240130T120000)"
+      private: no
+
+    - name: confirm_restore
+      prompt: "⚠️  This will OVERWRITE existing data! Type 'yes' to confirm"
+      private: no
+
+  tasks:
+    - name: Set restore variables
+      set_fact:
+        backup_dir: "{{ backup_location | default('/var/backups/semaphore') }}"
+        restore_path: "{{ backup_location | default('/var/backups/semaphore') }}/{{ backup_timestamp }}"
+        semaphore_service_group: semaphore
+        semaphore_service_user: semaphore
+        semaphore_config_dir: /usr/local/etc/semaphore
+        custom_ca_dir: /usr/local/share/certs
+    # =============================================================================
+    # VALIDATION
+    # =============================================================================
+
+    - name: Validate confirmation
+      fail:
+        msg: "Restore cancelled - confirmation not received"
+      when: confirm_restore != "yes"
+
+    - name: Check if backup exists
+      stat:
+        path: "{{ restore_path }}"
+      register: backup_exists
+
+    - name: Fail if backup doesn't exist
+      fail:
+        msg: "Backup not found at {{ restore_path }}"
+      when: not backup_exists.stat.exists
+
+    - name: Display backup info
+      command: cat {{ restore_path }}/backup-info.txt
+      register: backup_info
+      changed_when: false
+
+    - name: Show backup information
+      debug:
+        msg: "{{ backup_info.stdout_lines }}"
+
+    - name: Confirm proceeding with restore
+      pause:
+        prompt: "Press ENTER to proceed with restore or Ctrl+C to cancel"
+
+    # =============================================================================
+    # STOP SERVICES
+    # =============================================================================
+
+    - name: Stop Semaphore service
+      command: jexec semaphore-app service semaphore stop
+      ignore_errors: yes
+
+    # =============================================================================
+    # RESTORE DATABASE
+    # =============================================================================
+
+    - name: Check if database dump exists
+      stat:
+        path: "{{ restore_path }}/database.dump"
+      register: db_dump_exists
+
+    - name: Restore database
+      when: db_dump_exists.stat.exists
+      block:
+        - name: "Drop existing database (WARNING: data loss!)"
+          command: >
+            jexec semaphore-db
+            su - postgres -c "dropdb --if-exists {{ semaphore_db_name }}"
+
+        - name: Create fresh database
+          command: >
+            jexec semaphore-db
+            su - postgres -c "createdb -O {{ semaphore_db_user }} {{ semaphore_db_name }}"
+
+        - name: Copy database dump to jail
+          command: >
+            cp {{ restore_path }}/database.dump /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-db/tmp/restore.dump
+
+        - name: Restore database from dump
+          command: >
+            jexec semaphore-db
+            su - postgres -c "pg_restore -d {{ semaphore_db_name }} /tmp/restore.dump"
+          register: db_restore
+
+        - name: Remove temporary dump file
+          command: >
+            jexec semaphore-db rm -f /tmp/restore.dump
+
+        - name: Display database restore result
+          debug:
+            msg: "✓ Database restored successfully"
+
+    # =============================================================================
+    # RESTORE SEMAPHORE RUNTIME DATA
+    # =============================================================================
+
+    - name: Check if Semaphore data backup exists
+      stat:
+        path: "{{ restore_path }}/semaphore-data.tar.gz"
+      register: semaphore_data_exists
+
+    - name: Restore Semaphore configuration
+      when: semaphore_data_exists.stat.exists
+      block:
+        - name: Copy Semaphore data to jail
+          command: >
+            cp {{ restore_path }}/semaphore-data.tar.gz
+            /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/tmp/semaphore-data.tar.gz
+
+        - name: Extract Semaphore data
+          shell: |
+            jexec semaphore-app tar -xzf /tmp/semaphore-data.tar.gz -C /usr/local/etc/semaphore
+
+        - name: Remove temporary file
+          command: jexec semaphore-app rm -f /tmp/semaphore-data.tar.gz
+
+        - name: Fix restored config file ownership
+          command: jexec semaphore-app chown root:{{ semaphore_service_group }} {{ semaphore_config_dir }}/config.json
+
+        - name: Fix restored config file permissions
+          command: jexec semaphore-app chmod 0640 {{ semaphore_config_dir }}/config.json
+
+        - name: Display Semaphore data restore result
+          debug:
+            msg: "✓ Semaphore configuration restored"
+
+    # =============================================================================
+    # RESTORE CERTIFICATES (if backed up)
+    # =============================================================================
+
+    - name: Check if certificates backup exists
+      stat:
+        path: "{{ restore_path }}/certificates.tar.gz"
+      register: certs_exist
+
+    - name: Restore TLS certificates
+      when: certs_exist.stat.exists
+      block:
+        - name: Copy certificates to jail
+          command: >
+            cp {{ restore_path }}/certificates.tar.gz
+            /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/tmp/certificates.tar.gz
+
+        - name: Extract certificates
+          shell: |
+            jexec semaphore-app tar -xzf /tmp/certificates.tar.gz -C /usr/local/etc/ssl
+
+        - name: Remove temporary file
+          command: jexec semaphore-app rm -f /tmp/certificates.tar.gz
+
+        - name: Display certificate restore result
+          debug:
+            msg: "✓ TLS certificates restored"
+
+    # =============================================================================
+    # RESTORE CUSTOM CAs (if backed up)
+    # =============================================================================
+
+    - name: Check if custom CA backup exists
+      stat:
+        path: "{{ restore_path }}/custom-ca.tar.gz"
+      register: custom_ca_exist
+
+    - name: Restore custom CA certificates
+      when: custom_ca_exist.stat.exists
+      block:
+        - name: Copy custom CAs to jail
+          command: >
+            cp {{ restore_path }}/custom-ca.tar.gz
+            /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/tmp/custom-ca.tar.gz
+
+        - name: Extract custom CAs
+          shell: |
+            jexec semaphore-app tar -xzf /tmp/custom-ca.tar.gz -C {{ custom_ca_dir }}
+
+        - name: Remove temporary file
+          command: jexec semaphore-app rm -f /tmp/custom-ca.tar.gz
+
+        - name: Rehash certificates
+          command: jexec semaphore-app certctl rehash
+
+        - name: Display CA restore result
+          debug:
+            msg: "✓ Custom CA certificates restored"
+
+    # =============================================================================
+    # START SERVICES
+    # =============================================================================
+
+    - name: Start Semaphore service
+      command: jexec semaphore-app service semaphore start
+
+    - name: Wait for Semaphore to be ready
+      uri:
+        url: "https://{{ hostvars['semaphore-app'].jail_ip }}:{{ semaphore_port }}/api/ping"
+        method: GET
+        status_code: 200
+        validate_certs: no
+      register: ping_result
+      retries: 10
+      delay: 3
+      until: ping_result is succeeded
+
+    # =============================================================================
+    # VERIFICATION
+    # =============================================================================
+
+    - name: Verify database connection
+      command: >
+        jexec semaphore-db
+        su - postgres -c "psql -d {{ semaphore_db_name }} -c 'SELECT COUNT(*) FROM project;'"
+      register: db_verify
+      changed_when: false
+
+    - name: Display restore summary
+      debug:
+        msg:
+          - "✓ Restore completed successfully!"
+          - ""
+          - "📦 Restored from backup: {{ backup_timestamp }}"
+          - "📁 Backup location: {{ restore_path }}"
+          - ""
+          - "✅ Restored components:"
+          - "{% if db_dump_exists.stat.exists %}   • PostgreSQL database{% endif %}"
+          - "{% if semaphore_data_exists.stat.exists %}   • Semaphore configuration{% endif %}"
+          - "{% if certs_exist.stat.exists %}   • TLS certificates{% endif %}"
+          - "{% if custom_ca_exist.stat.exists %}   • Custom CA certificates{% endif %}"
+          - ""
+          - "🔍 Verification:"
+          - "   • Database is accessible"
+          - "   • Semaphore is running and responding"
+          - ""
+          - "🌐 Access Semaphore:"
+          - "   URL: https://{{ hostvars['semaphore-app'].jail_ip }}:{{ semaphore_port }}"

@@ -1,0 +1,7 @@
+# Jail fstab for {{ jail_name }}
+# Managed by Ansible - DO NOT EDIT MANUALLY
+{% if jail_mounts | length > 0 %}
+{% for mount in jail_mounts %}
+{{ mount.src }}	{{ jail_path }}{{ mount.dest }}	nullfs	{{ mount.options | default('rw') }}	0	0
+{% endfor %}
+{% endif %}

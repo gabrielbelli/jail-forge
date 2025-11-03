@@ -1,0 +1,9 @@
+---
+# Handlers for semaphore role
+- name: restart semaphore
+  command: jexec {{ jail_name }} service semaphore restart
+  listen: restart semaphore
+
+- name: reload semaphore
+  command: jexec {{ jail_name }} service semaphore reload
+  listen: reload semaphore

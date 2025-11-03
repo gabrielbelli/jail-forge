@@ -1,0 +1,42 @@
+---
+# Ansible Semaphore on BSD Jails Inventory
+# Copy this file to hosts.yml and update with your values
+
+all:
+  children:
+    # The physical/virtual BSD host that will run the jails
+    jail_hosts:
+      hosts:
+        bsd-host:
+          ansible_host: your-bsd-host.example.com  # Your BSD host IP or hostname
+          ansible_user: root
+          ansible_python_interpreter: /usr/local/bin/python3.11
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa  # Path to your SSH private key
+
+    # Virtual inventory for jails (will be created by playbooks)
+    jails:
+      children:
+        database_jails:
+          hosts:
+            semaphore-db:
+              jail_ip: 192.168.1.50  # Change to an available IP in your network
+              jail_host: bsd-host
+              jail_autostart: true
+              jail_vnet: false
+
+        app_jails:
+          hosts:
+            semaphore-app:
+              jail_ip: 192.168.1.51  # Change to an available IP in your network
+              jail_host: bsd-host
+              jail_autostart: true
+              jail_vnet: false
+              # Mount logs to host for easy access
+              jail_mounts:
+                - { src: "/var/log/semaphore-jails/semaphore-app", dest: "/var/log/semaphore", options: "rw" }
+
+    # Group all jails together for common operations
+    all_jails:
+      children:
+        database_jails:
+        app_jails:

@@ -1,0 +1,405 @@
+---
+# Main tasks for semaphore role
+- name: Install required packages
+  command: jexec {{ jail_name }} pkg install -y {{ semaphore_required_packages | join(' ') }}
+  register: pkg_install
+  changed_when: pkg_install.rc == 0
+
+# Custom CA certificate management
+- name: Import custom CA certificates
+  when: custom_ca_enabled | default(false)
+  block:
+    - name: Create custom CA directory
+      file:
+        path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ custom_ca_dir }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: wheel
+
+    - name: Copy custom CA certificates to jail
+      copy:
+        src: "{{ item.path }}"
+        dest: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ custom_ca_dir }}/{{ item.name }}.crt"
+        mode: '0644'
+        owner: root
+        group: wheel
+      loop: "{{ custom_ca_certificates }}"
+      when: custom_ca_certificates | length > 0
+      register: ca_certs_copied
+
+    - name: Rehash CA certificates directory
+      command: jexec {{ jail_name }} c_rehash {{ custom_ca_dir }}
+      when: ca_certs_copied is changed
+
+    - name: Update system CA trust store with certctl
+      command: jexec {{ jail_name }} certctl rehash
+      when: ca_certs_copied is changed
+
+    - name: Verify CA certificates are installed
+      shell: |
+        jexec {{ jail_name }} sh -c '
+        for cert in {{ custom_ca_dir }}/*.crt; do
+          if [ -f "$cert" ]; then
+            echo "Checking: $cert"
+            openssl x509 -in "$cert" -noout -subject -issuer
+          fi
+        done'
+      register: ca_verify
+      changed_when: false
+
+    - name: Display imported CA certificates
+      debug:
+        msg:
+          - "✓ Custom CA certificates imported successfully"
+          - "Location: {{ custom_ca_dir }}"
+          - "Certificates:"
+          - "{{ ca_verify.stdout_lines }}"
+      when: ca_verify.stdout_lines | length > 0
+
+- name: Create Semaphore service group
+  command: jexec {{ jail_name }} pw groupadd {{ semaphore_service_group }} -g 965
+  register: group_create
+  failed_when: group_create.rc != 0 and 'already exists' not in group_create.stderr
+  changed_when: group_create.rc == 0
+
+- name: Create Semaphore service user
+  command: >
+    jexec {{ jail_name }} pw useradd {{ semaphore_service_user }}
+    -u 965 -g {{ semaphore_service_group }}
+    -c "Semaphore Service User"
+    -d /nonexistent
+    -s /usr/sbin/nologin
+  register: user_create
+  failed_when: user_create.rc != 0 and 'already exists' not in user_create.stderr
+  changed_when: user_create.rc == 0
+
+- name: Create Semaphore directories
+  command: jexec {{ jail_name }} mkdir -p {{ item }}
+  loop:
+    - "{{ semaphore_config_dir }}"
+    - "{{ semaphore_tmp_dir }}"
+    - /var/log/semaphore
+  register: dir_create
+  failed_when: false
+  changed_when: dir_create.rc == 0
+
+- name: Set Semaphore directory ownership
+  command: >
+    jexec {{ jail_name }} chown -R {{ semaphore_service_user }}:{{ semaphore_service_group }} {{ item }}
+  loop:
+    - "{{ semaphore_config_dir }}"
+    - "{{ semaphore_tmp_dir }}"
+    - /var/log/semaphore
+
+- name: Create SSL certificate directory
+  file:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ tls_cert_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: wheel
+  when: tls_enabled | default(true)
+
+- name: Check if certificates already exist
+  stat:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ tls_cert_file }}"
+  register: cert_exists
+  when: tls_enabled | default(true)
+
+- name: Check if private key already exists
+  stat:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ tls_key_file }}"
+  register: key_exists
+  when: tls_enabled | default(true)
+
+# Certificate generation block (only if certs don't exist)
+- name: Certificate generation
+  when:
+    - tls_enabled | default(true)
+    - tls_cert_strategy == "generate"
+    - not cert_exists.stat.exists or not key_exists.stat.exists
+  block:
+    - name: Install OpenSSL
+      command: jexec {{ jail_name }} pkg install -y openssl
+      register: openssl_install
+      changed_when: openssl_install.rc == 0
+
+    - name: Generate OpenSSL private key
+      command: >
+        jexec {{ jail_name }} openssl genrsa -out {{ tls_key_file }} {{ tls_cert_key_size }}
+      args:
+        creates: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ tls_key_file }}"
+
+    - name: Set private key permissions
+      command: jexec {{ jail_name }} chown root:{{ semaphore_service_group }} {{ tls_key_file }}
+
+    - name: Set private key mode
+      command: jexec {{ jail_name }} chmod 0640 {{ tls_key_file }}
+
+    - name: Create OpenSSL configuration for self-signed certificate
+      template:
+        src: openssl.cnf.j2
+        dest: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}/tmp/openssl.cnf"
+        mode: '0644'
+
+    - name: Generate self-signed certificate
+      command: >
+        jexec {{ jail_name }} openssl req -new -x509
+        -key {{ tls_key_file }}
+        -out {{ tls_cert_file }}
+        -days {{ tls_cert_lifetime_days }}
+        -config /tmp/openssl.cnf
+        -extensions v3_req
+      args:
+        creates: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ tls_cert_file }}"
+
+    - name: Set certificate permissions
+      file:
+        path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ tls_cert_file }}"
+        mode: '0644'
+        owner: root
+        group: wheel
+
+    - name: Remove temporary OpenSSL config
+      file:
+        path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}/tmp/openssl.cnf"
+        state: absent
+
+    - name: Display certificate validity
+      command: jexec {{ jail_name }} openssl x509 -in {{ tls_cert_file }} -noout -dates
+      register: cert_dates
+      changed_when: false
+
+    - name: Display certificate details
+      debug:
+        msg:
+          - "✓ Self-signed certificate generated successfully"
+          - "Certificate: {{ tls_cert_file }}"
+          - "Private Key: {{ tls_key_file }}"
+          - "{{ cert_dates.stdout_lines }}"
+
+# Existing certificate block
+- name: Use existing certificates
+  when:
+    - tls_enabled | default(true)
+    - tls_cert_strategy == "existing"
+    - not cert_exists.stat.exists or not key_exists.stat.exists
+  block:
+    - name: Copy existing certificate to jail
+      copy:
+        src: "{{ tls_existing_cert_path }}"
+        dest: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ tls_cert_file }}"
+        mode: '0644'
+        owner: root
+        group: wheel
+
+    - name: Copy existing private key to jail
+      copy:
+        src: "{{ tls_existing_key_path }}"
+        dest: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ tls_key_file }}"
+        mode: '0600'
+
+    - name: Set existing key ownership
+      command: jexec {{ jail_name }} chown root:{{ semaphore_service_group }} {{ tls_key_file }}
+
+    - name: Set existing key mode
+      command: jexec {{ jail_name }} chmod 0640 {{ tls_key_file }}
+
+    - name: Copy CA bundle if provided
+      copy:
+        src: "{{ tls_existing_ca_path }}"
+        dest: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ tls_ca_file }}"
+        mode: '0644'
+        owner: root
+        group: wheel
+      when: tls_existing_ca_path is defined and tls_existing_ca_path != ""
+
+    - name: Display existing certificate info
+      debug:
+        msg:
+          - "✓ Existing certificates deployed"
+          - "Certificate: {{ tls_cert_file }}"
+          - "Private Key: {{ tls_key_file }}"
+
+- name: Verify certificate and key match
+  shell: |
+    jexec {{ jail_name }} sh -c '
+    cert_md5=$(openssl x509 -noout -modulus -in {{ tls_cert_file }} | openssl md5)
+    key_md5=$(openssl rsa -noout -modulus -in {{ tls_key_file }} | openssl md5)
+    if [ "$cert_md5" = "$key_md5" ]; then
+      echo "Certificate and key match"
+      exit 0
+    else
+      echo "Certificate and key do NOT match!"
+      exit 1
+    fi'
+  register: cert_verify
+  changed_when: false
+  when:
+    - tls_enabled | default(true)
+    - cert_exists.stat.exists
+    - key_exists.stat.exists
+
+- name: Check if Semaphore is already installed
+  stat:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ semaphore_install_dir }}/semaphore"
+  register: semaphore_binary
+
+- name: Download Semaphore binary to host
+  get_url:
+    url: "https://github.com/ansible-semaphore/semaphore/releases/download/{{ semaphore_version }}/semaphore_{{ semaphore_version | replace('v', '') }}_{{ semaphore_arch }}.tar.gz"
+    dest: /tmp/semaphore.tar.gz
+    mode: '0644'
+  when: not semaphore_binary.stat.exists
+
+- name: Copy Semaphore tarball to jail
+  command: >
+    cp /tmp/semaphore.tar.gz
+    /{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}/tmp/semaphore.tar.gz
+  when: not semaphore_binary.stat.exists
+
+- name: Extract Semaphore binary in jail
+  command: >
+    jexec {{ jail_name }} tar -xzf /tmp/semaphore.tar.gz -C {{ semaphore_install_dir }}
+  args:
+    creates: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ semaphore_install_dir }}/semaphore"
+
+- name: Remove temporary files
+  shell: |
+    rm -f /tmp/semaphore.tar.gz
+    jexec {{ jail_name }} rm -f /tmp/semaphore.tar.gz
+  when: not semaphore_binary.stat.exists
+  failed_when: false
+
+- name: Set executable permissions on Semaphore binary
+  file:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ semaphore_install_dir }}/semaphore"
+    mode: '0755'
+    owner: root
+    group: wheel
+
+- name: Generate random secrets if not provided
+  set_fact:
+    semaphore_cookie_hash: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}"
+    semaphore_cookie_encryption: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}"
+    semaphore_access_key_encryption: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}"
+  when: >
+    semaphore_cookie_hash == "changeme_random_hash" or
+    semaphore_cookie_encryption == "changeme_random_encryption_key" or
+    semaphore_access_key_encryption == "changeme_access_key_encryption"
+
+- name: Create Semaphore configuration file
+  template:
+    src: config.json.j2
+    dest: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ semaphore_config_dir }}/config.json"
+    owner: root
+    group: wheel
+    mode: '0600'
+  notify: restart semaphore
+
+- name: Set config file ownership
+  command: jexec {{ jail_name }} chown root:{{ semaphore_service_group }} {{ semaphore_config_dir }}/config.json
+
+- name: Set config file mode
+  command: jexec {{ jail_name }} chmod 0640 {{ semaphore_config_dir }}/config.json
+
+- name: Run Semaphore database migrations
+  command: >
+    jexec {{ jail_name }} {{ semaphore_install_dir }}/semaphore migrate
+  environment:
+    SEMAPHORE_CONFIG_PATH: "{{ semaphore_config_dir }}/config.json"
+  register: migrate_result
+  changed_when: "'Executing migration' in migrate_result.stdout"
+
+- name: Check if admin user exists
+  command: >
+    jexec {{ jail_name }} {{ semaphore_install_dir }}/semaphore user list
+  environment:
+    SEMAPHORE_CONFIG_PATH: "{{ semaphore_config_dir }}/config.json"
+  register: user_list
+  changed_when: false
+  failed_when: false
+
+- name: Create Semaphore admin user
+  command: >
+    jexec {{ jail_name }} {{ semaphore_install_dir }}/semaphore user add
+    --admin
+    --login {{ semaphore_admin_user }}
+    --name "{{ semaphore_admin_name }}"
+    --email {{ semaphore_admin_email }}
+    --password {{ semaphore_admin_password }}
+  environment:
+    SEMAPHORE_CONFIG_PATH: "{{ semaphore_config_dir }}/config.json"
+  when: semaphore_admin_user not in user_list.stdout
+  no_log: true
+
+- name: Create rc.d directory in jail
+  file:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}/usr/local/etc/rc.d"
+    state: directory
+    mode: '0755'
+
+- name: Create Semaphore rc.d service script
+  template:
+    src: semaphore.rc.j2
+    dest: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}/usr/local/etc/rc.d/semaphore"
+    mode: '0755'
+
+- name: Enable Semaphore service
+  lineinfile:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}/etc/rc.conf"
+    regexp: '^semaphore_enable='
+    line: 'semaphore_enable="YES"'
+    create: yes
+
+- name: Configure Semaphore config path
+  lineinfile:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}/etc/rc.conf"
+    regexp: '^semaphore_config='
+    line: 'semaphore_config="{{ semaphore_config_dir }}/config.json"'
+    create: yes
+
+- name: Start Semaphore service
+  command: jexec {{ jail_name }} service semaphore start
+  register: service_start
+  failed_when: false
+
+- name: Wait for Semaphore to be ready
+  uri:
+    url: "https://{{ hostvars['semaphore-app'].jail_ip }}:{{ semaphore_port }}/api/ping"
+    method: GET
+    status_code: 200
+    validate_certs: no
+  register: ping_result
+  retries: 10
+  delay: 3
+  until: ping_result is succeeded
+
+- name: Deploy log rotation signal script to host
+  template:
+    src: logsignal.sh.j2
+    dest: "/usr/local/bin/semaphore-{{ jail_name }}-logsignal.sh"
+    mode: '0755'
+    owner: root
+    group: wheel
+
+- name: Display Semaphore information
+  debug:
+    msg:
+      - "✓ Semaphore {{ semaphore_version }} installed successfully!"
+      - "URL: https://{{ hostvars['semaphore-app'].jail_ip }}:{{ semaphore_port }}"
+      - "TLS: Enabled"
+      - "Certificate: {{ tls_cert_file }}"
+      - "Username: {{ semaphore_admin_user }}"
+      - "Password: {{ semaphore_admin_password }}"
+      - ""
+      - "Configuration: {{ semaphore_config_dir }}/config.json"
+      - "Logs: /var/log/semaphore/"
+      - "Host logs: /var/log/semaphore-jails/{{ jail_name }}/"
+      - ""
+      - "📋 Log Rotation (newsyslog):"
+      - "   Script deployed: /usr/local/bin/semaphore-{{ jail_name }}-logsignal.sh"
+      - "   Note: Semaphore will be restarted after log rotation (no signal support)"
+      - "   Add to /etc/newsyslog.conf or /etc/newsyslog.conf.d/semaphore.conf:"
+      - "   /var/log/semaphore-jails/{{ jail_name }}/semaphore.log  965:965  640  30  *  @T00  JC  /usr/local/bin/semaphore-{{ jail_name }}-logsignal.sh"

@@ -1,0 +1,54 @@
+---
+# Main playbook for complete Semaphore deployment on BSD jails
+# Usage: ansible-playbook site.yml
+
+- name: Deploy Ansible Semaphore Infrastructure on BSD Jails
+  hosts: jail_hosts
+  gather_facts: true
+  tags: [always]
+
+  pre_tasks:
+    - name: Verify BSD host requirements
+      assert:
+        that:
+          - ansible_system == "FreeBSD"
+          - ansible_distribution_version is version('13.0', '>=')
+        fail_msg: "This playbook requires FreeBSD 13.0 or higher"
+        success_msg: "BSD host requirements met: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+      tags: [check]
+
+    - name: Ensure required packages are installed on host
+      community.general.pkgng:
+        name:
+          - python311
+          - py311-pip
+          - git
+          - curl
+          - ca_root_nss
+        state: present
+      tags: [bootstrap]
+
+  tasks:
+    - name: Display deployment information
+      debug:
+        msg:
+          - "Deploying Ansible Semaphore to {{ inventory_hostname }}"
+          - "FreeBSD Version: {{ freebsd_version }}"
+          - "ZFS Pool: {{ zfs_pool }}"
+          - "Jail Network: {{ jail_network_cidr }}"
+
+# Step 1: Prepare jail host and create base jails
+- import_playbook: playbooks/01-prepare-host.yml
+  tags: [prepare, bootstrap]
+
+# Step 2: Create and configure database jail
+- import_playbook: playbooks/02-deploy-database.yml
+  tags: [database, db]
+
+# Step 3: Create and configure Semaphore jail with TLS
+- import_playbook: playbooks/03-deploy-semaphore.yml
+  tags: [semaphore, app, tls]
+
+# Step 4: Verify deployment
+- import_playbook: playbooks/04-verify-deployment.yml
+  tags: [verify, check]

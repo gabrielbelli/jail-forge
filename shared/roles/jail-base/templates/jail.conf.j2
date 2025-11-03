@@ -1,0 +1,16 @@
+# Main jail.conf configuration
+# Individual jail configurations are in /usr/local/etc/jail.conf.d/
+
+# Global jail defaults
+exec.start = "/bin/sh /etc/rc";
+exec.stop = "/bin/sh /etc/rc.shutdown";
+exec.clean;
+mount.devfs;
+
+# Security defaults
+allow.raw_sockets = 0;
+devfs_ruleset = 4;
+enforce_statfs = 2;
+
+# Include individual jail configurations
+.include "/usr/local/etc/jail.conf.d/*.conf";

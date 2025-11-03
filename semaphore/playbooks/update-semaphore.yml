@@ -1,0 +1,64 @@
+---
+# Update Semaphore to a new version
+- name: Update Semaphore Application
+  hosts: jail_hosts
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/vars.yml
+    - ../group_vars/all/secrets.yml
+
+  tasks:
+    - name: Stop Semaphore service
+      command: jexec semaphore-app service semaphore stop
+      ignore_errors: yes
+
+    - name: Backup current Semaphore binary
+      command: >
+        jexec semaphore-app
+        cp /usr/local/bin/semaphore /usr/local/bin/semaphore.bak.{{ ansible_date_time.epoch }}
+      ignore_errors: yes
+
+    - name: Download new Semaphore version to host
+      get_url:
+        url: "https://github.com/ansible-semaphore/semaphore/releases/download/{{ semaphore_new_version | default('latest') }}/semaphore_{{ semaphore_new_version | default('latest') }}_freebsd_amd64.tar.gz"
+        dest: /tmp/semaphore_update.tar.gz
+        mode: '0644'
+
+    - name: Copy tarball to jail
+      command: >
+        cp /tmp/semaphore_update.tar.gz
+        /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/tmp/semaphore.tar.gz
+
+    - name: Extract new Semaphore binary in jail
+      shell: |
+        jexec semaphore-app tar -xzf /tmp/semaphore.tar.gz -C /usr/local/bin/
+
+    - name: Remove temporary files
+      shell: |
+        rm -f /tmp/semaphore_update.tar.gz
+        jexec semaphore-app rm -f /tmp/semaphore.tar.gz
+
+    - name: Run database migrations
+      command: >
+        jexec semaphore-app
+        semaphore migrate
+      environment:
+        SEMAPHORE_CONFIG_PATH: /usr/local/etc/semaphore
+
+    - name: Start Semaphore service
+      command: jexec semaphore-app service semaphore start
+
+    - name: Wait for Semaphore to be ready
+      uri:
+        url: "https://{{ jail_ip_semaphore }}:{{ semaphore_port }}/api/ping"
+        method: GET
+        status_code: 200
+        validate_certs: no
+      register: ping_result
+      retries: 10
+      delay: 3
+      until: ping_result is succeeded
+
+    - name: Display update result
+      debug:
+        msg: "✓ Semaphore updated successfully to {{ semaphore_new_version | default('latest') }}"

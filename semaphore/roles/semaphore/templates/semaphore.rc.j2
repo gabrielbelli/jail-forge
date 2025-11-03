@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# PROVIDE: semaphore
+# REQUIRE: DAEMON NETWORKING postgresql
+# KEYWORD: shutdown
+#
+# Add the following lines to /etc/rc.conf to enable semaphore:
+#
+# semaphore_enable (bool):    Set to "NO" by default.
+#                             Set it to "YES" to enable semaphore
+# semaphore_user (str):       Set to "{{ semaphore_service_user }}" by default.
+# semaphore_config (str):     Set to "{{ semaphore_config_dir }}/config.json" by default.
+
+. /etc/rc.subr
+
+name="semaphore"
+rcvar="${name}_enable"
+
+load_rc_config $name
+
+: ${semaphore_enable:="NO"}
+: ${semaphore_user:="{{ semaphore_service_user }}"}
+: ${semaphore_group:="{{ semaphore_service_group }}"}
+: ${semaphore_config:="{{ semaphore_config_dir }}/config.json"}
+: ${semaphore_log:="/var/log/semaphore/semaphore.log"}
+
+pidfile="/var/run/${name}.pid"
+command="{{ semaphore_install_dir }}/semaphore"
+command_args="service --config ${semaphore_config}"
+
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+status_cmd="${name}_status"
+
+semaphore_start()
+{
+    echo "Starting ${name}."
+    /usr/sbin/daemon -p ${pidfile} -u ${semaphore_user} \
+        -o ${semaphore_log} \
+        ${command} ${command_args}
+}
+
+semaphore_stop()
+{
+    if [ -f ${pidfile} ]; then
+        echo "Stopping ${name}."
+        kill -TERM $(cat ${pidfile})
+        rm -f ${pidfile}
+    else
+        echo "${name} is not running."
+    fi
+}
+
+semaphore_status()
+{
+    if [ -f ${pidfile} ]; then
+        pid=$(cat ${pidfile})
+        if ps -p ${pid} > /dev/null 2>&1; then
+            echo "${name} is running as pid ${pid}."
+        else
+            echo "${name} is not running but pid file exists."
+        fi
+    else
+        echo "${name} is not running."
+    fi
+}
+
+run_rc_command "$1"

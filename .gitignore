@@ -1,0 +1,75 @@
+# Ansible
+*.retry
+.ansible/
+/tmp/
+/ansible_facts/
+ansible.log
+*.original
+*.rpmnew
+*.rpmsave
+
+# Secrets & Credentials
+.env
+.vault_pass
+*.vault
+# Ignore actual secrets and inventory files (use .example templates)
+**/group_vars/all/secrets.yml
+**/inventory/hosts.yml
+**/group_vars/*/vault.yml
+**/host_vars/*/vault.yml
+*.key
+*.pem
+id_rsa*
+id_ecdsa*
+id_ed25519*
+!roles/*/files/*.key  # Allow public keys in roles if needed
+
+# Python
+*.pyc
+__pycache__/
+.python-version
+venv/
+.venv/
+
+# Logs
+*.log
+logs/
+
+# Backups
+*.bak
+*.backup
+backups/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.vagrant/
+.molecule/
+.pytest_cache/
+test_output/
+
+# Generated files
+*.tar.gz
+*.zip
+*.iso
+
+# Claude Code / AI tools
+.claude/
+
+# Temporary files
+*.tmp
+tmp/
+temp/
+*.broken
+*.test
+*-old
+*-backup

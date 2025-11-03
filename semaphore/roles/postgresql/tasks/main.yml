@@ -1,0 +1,74 @@
+---
+# Main tasks for postgresql role
+- name: Install PostgreSQL server packages
+  command: jexec {{ jail_name }} pkg install -y postgresql{{ postgres_version }}-server postgresql{{ postgres_version }}-client postgresql{{ postgres_version }}-contrib
+  register: pg_install
+  changed_when: pg_install.rc == 0
+
+- name: Enable PostgreSQL service
+  lineinfile:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}/etc/rc.conf"
+    regexp: '^postgresql_enable='
+    line: 'postgresql_enable="YES"'
+    create: yes
+
+- name: Set PostgreSQL data directory in rc.conf
+  lineinfile:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}/etc/rc.conf"
+    regexp: '^postgresql_data='
+    line: 'postgresql_data="{{ postgres_data_dir }}"'
+    create: yes
+
+- name: Check if PostgreSQL is initialized
+  stat:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ postgres_data_dir }}/PG_VERSION"
+  register: postgres_initialized
+
+- name: Initialize PostgreSQL database
+  command: jexec {{ jail_name }} su - postgres -c "/usr/local/bin/initdb -D {{ postgres_data_dir }}"
+  when: not postgres_initialized.stat.exists
+
+- name: Configure PostgreSQL to listen on all interfaces
+  lineinfile:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ postgres_data_dir }}/postgresql.conf"
+    regexp: '^#?listen_addresses'
+    line: "listen_addresses = '*'"
+
+- name: Configure PostgreSQL authentication
+  lineinfile:
+    path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}{{ postgres_data_dir }}/pg_hba.conf"
+    line: "host    all    all    {{ jail_network_cidr }}    md5"
+
+- name: Start PostgreSQL service
+  command: jexec {{ jail_name }} service postgresql start
+  register: pg_start
+  failed_when: false
+
+- name: Wait for PostgreSQL
+  wait_for:
+    host: "{{ hostvars['semaphore-db'].jail_ip }}"
+    port: 5432
+    delay: 2
+    timeout: 30
+
+- name: Create Semaphore database user
+  command: >
+    jexec {{ jail_name }} su - postgres -c
+    "psql -c \"CREATE USER {{ semaphore_db_user }} WITH PASSWORD '{{ semaphore_db_password }}';\""
+  register: create_user
+  failed_when: create_user.rc != 0 and 'already exists' not in create_user.stderr
+
+- name: Create Semaphore database
+  command: >
+    jexec {{ jail_name }} su - postgres -c
+    "createdb -O {{ semaphore_db_user }} {{ semaphore_db_name }}"
+  register: create_db
+  failed_when: create_db.rc != 0 and 'already exists' not in create_db.stderr
+
+- name: Display database information
+  debug:
+    msg:
+      - "PostgreSQL {{ postgres_version }} installed"
+      - "Database: {{ semaphore_db_name }}"
+      - "User: {{ semaphore_db_user }}"
+      - "Host: {{ hostvars['semaphore-db'].jail_ip }}"

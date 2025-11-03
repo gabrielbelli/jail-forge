@@ -1,0 +1,61 @@
+---
+# Non-sensitive global variables
+# These are not encrypted and can be committed to git
+
+# =============================================================================
+# VERSIONS
+# =============================================================================
+semaphore_version: "v2.16.37"
+postgres_version: "15"
+nginx_version: "latest"
+
+# =============================================================================
+# TIMEZONE AND LOCALE
+# =============================================================================
+timezone: "UTC"
+locale: "en_US.UTF-8"
+
+# =============================================================================
+# COMMON PACKAGES
+# =============================================================================
+common_packages:
+  - python311
+  - py311-pip
+  - git
+  - curl
+  - ca_root_nss
+  - vim
+  - htop
+
+# =============================================================================
+# MONITORING (Optional)
+# =============================================================================
+monitoring_enabled: false
+monitoring_port: 9090
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+log_retention_days: 30
+syslog_remote_enabled: false
+syslog_remote_host: ""
+syslog_remote_port: 514
+
+# =============================================================================
+# BACKUP RETENTION
+# =============================================================================
+# Backup location (BSD standard: /var/backups)
+backup_location: "/var/backups/semaphore"
+
+# Age-based retention (optional): Remove backups older than N days
+# backup_retention_days: 30
+
+# Count-based retention (optional): Keep only the last N backups
+# Recommended: 7 for daily backups (1 week), 30 for hourly backups (1 day+)
+backup_retention_count: 10
+
+# Compress full backup archives (optional)
+backup_compress: false
+
+# Create ZFS snapshots alongside backups for quick rollback (optional)
+backup_zfs_snapshots: false

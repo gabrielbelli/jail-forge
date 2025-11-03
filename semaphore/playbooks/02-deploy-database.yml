@@ -1,0 +1,32 @@
+---
+# Deploy PostgreSQL database jail
+- name: Deploy PostgreSQL Database Jail
+  hosts: jail_hosts
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/secrets.yml
+    - ../group_vars/all/vars.yml
+
+  tasks:
+    - name: Create database jail from base
+      include_role:
+        name: jail-base
+      vars:
+        jail_name: semaphore-db
+        jail_ip: "{{ hostvars['semaphore-db'].jail_ip }}"
+        jail_autostart: "{{ hostvars['semaphore-db'].jail_autostart }}"
+        jail_mounts: "{{ hostvars['semaphore-db'].jail_mounts | default([]) }}"
+
+- name: Configure PostgreSQL in jail
+  hosts: jail_hosts
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all/secrets.yml
+    - ../group_vars/all/vars.yml
+
+  tasks:
+    - name: Install and configure PostgreSQL
+      include_role:
+        name: postgresql
+      vars:
+        jail_name: semaphore-db

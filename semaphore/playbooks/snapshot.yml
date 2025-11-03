@@ -1,0 +1,108 @@
+---
+# Quick ZFS Snapshots for Semaphore Infrastructure
+# Fast, instant snapshots of jails for quick rollback capability
+- name: Create ZFS Snapshots
+  hosts: jail_hosts
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/vars.yml
+    - ../group_vars/all/secrets.yml
+
+  tasks:
+    - name: Set snapshot variables
+      set_fact:
+        snapshot_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+        snapshot_name_db: "{{ zfs_pool }}/{{ jail_dataset }}/data/db@snapshot-{{ ansible_date_time.iso8601_basic_short }}"
+        snapshot_name_semaphore: "{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore@snapshot-{{ ansible_date_time.iso8601_basic_short }}"
+    - name: Display snapshot information
+      debug:
+        msg:
+          - "📸 Creating ZFS snapshots..."
+          - ""
+          - "Timestamp: {{ snapshot_timestamp }}"
+          - "Database: {{ snapshot_name_db }}"
+          - "Semaphore: {{ snapshot_name_semaphore }}"
+
+    - name: Check if database jail dataset exists
+      command: zfs list -H -o name {{ zfs_pool }}/{{ jail_dataset }}/data/db
+      register: db_dataset_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check if Semaphore jail dataset exists
+      command: zfs list -H -o name {{ zfs_pool }}/{{ jail_dataset }}/data/semaphore
+      register: semaphore_dataset_check
+      changed_when: false
+      failed_when: false
+
+    - name: Take ZFS snapshot of database jail
+      community.general.zfs:
+        name: "{{ snapshot_name_db }}"
+        state: present
+      when: db_dataset_check.rc == 0
+
+    - name: Take ZFS snapshot of Semaphore jail
+      community.general.zfs:
+        name: "{{ snapshot_name_semaphore }}"
+        state: present
+      when: semaphore_dataset_check.rc == 0
+
+    - name: Get snapshot sizes
+      shell: |
+        zfs list -t snapshot -H -o name,used,refer -r {{ zfs_pool }}/{{ jail_dataset }}/data | grep snapshot-{{ snapshot_timestamp }}
+      register: snapshot_info
+      changed_when: false
+      failed_when: false
+
+    - name: List all Semaphore snapshots
+      shell: |
+        zfs list -t snapshot -H -o name,used,creation -r {{ zfs_pool }}/{{ jail_dataset }}/data | grep -E "(db@|semaphore@)" | tail -10
+      register: all_snapshots
+      changed_when: false
+      failed_when: false
+
+    - name: Display snapshot summary
+      debug:
+        msg:
+          - "════════════════════════════════════════"
+          - "✓ ZFS Snapshots Created Successfully!"
+          - "════════════════════════════════════════"
+          - ""
+          - "📸 New Snapshots:"
+          - "{{ snapshot_info.stdout_lines }}"
+          - ""
+          - "📋 Recent Snapshots (last 10):"
+          - "{{ all_snapshots.stdout_lines }}"
+          - ""
+          - "♻️  To Rollback:"
+          - ""
+          - "  1. Stop services:"
+          - "     jexec semaphore-app service semaphore stop"
+          - "     jexec semaphore-db service postgresql stop"
+          - ""
+          - "  2. Stop jails:"
+          - "     jail -r semaphore-app"
+          - "     jail -r semaphore-db"
+          - ""
+          - "  3. Rollback to snapshot:"
+          - "     zfs rollback {{ snapshot_name_db }}"
+          - "     zfs rollback {{ snapshot_name_semaphore }}"
+          - ""
+          - "  4. Restart jails:"
+          - "     service jail start"
+          - ""
+          - "⚠️  Warning: Rollback will lose all changes made after snapshot!"
+          - ""
+          - "📝 List all snapshots:"
+          - "   zfs list -t snapshot -r {{ zfs_pool }}/{{ jail_dataset }}/data"
+          - ""
+          - "🗑️  Delete a snapshot:"
+          - "   zfs destroy {{ zfs_pool }}/{{ jail_dataset }}/data/db@snapshot-NAME"
+          - "════════════════════════════════════════"
+
+    - name: Create snapshot catalog entry
+      lineinfile:
+        path: /var/log/semaphore-snapshots.log
+        line: "{{ ansible_date_time.iso8601 }} - Snapshot created: {{ snapshot_timestamp }}"
+        create: yes
+        mode: '0644'

@@ -1,0 +1,213 @@
+---
+# Destroy ALL Semaphore infrastructure and data
+# WARNING: This is IRREVERSIBLE and will delete all data!
+- name: Destroy ALL Semaphore Infrastructure and Data
+  hosts: jail_hosts
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/vars.yml
+    - ../group_vars/all/secrets.yml
+
+  tasks:
+    - name: Final warning before destruction
+      pause:
+        prompt: |
+          ⚠️  DANGER: This will PERMANENTLY DESTROY ALL data!
+
+          This action will:
+          - Stop all running jails
+          - Destroy semaphore-app jail
+          - Destroy semaphore-db jail
+          - DELETE ALL DATABASE DATA (irreversible!)
+          - DELETE ALL SEMAPHORE DATA (irreversible!)
+          - Remove ALL ZFS datasets
+          - Remove jail configurations
+
+          ⚠️  THIS CANNOT BE UNDONE!
+
+          Type 'destroy-everything' to confirm PERMANENT destruction
+      register: destruction_confirmation
+      when: confirm_destroy_all is not defined
+
+    - name: Validate destruction confirmation
+      assert:
+        that:
+          - (destruction_confirmation.user_input | default('no') | lower == 'destroy-everything') or (confirm_destroy_all | default('no') | lower == 'destroy-everything')
+        fail_msg: "Destruction cancelled - confirmation text did not match"
+        success_msg: "Confirmed - proceeding with COMPLETE destruction"
+
+    - name: Stop Semaphore service
+      command: jexec semaphore-app service semaphore stop
+      ignore_errors: yes
+
+    - name: Stop PostgreSQL service
+      command: jexec semaphore-db service postgresql stop
+      ignore_errors: yes
+
+    - name: Wait for services to stop
+      pause:
+        seconds: 3
+
+    - name: Stop Semaphore jail
+      command: jail -r semaphore-app
+      ignore_errors: yes
+
+    - name: Stop database jail
+      command: jail -r semaphore-db
+      ignore_errors: yes
+
+    - name: Wait for jails to stop
+      pause:
+        seconds: 2
+
+    - name: Check for remaining nullfs mounts
+      shell: mount -t nullfs | grep -E "(semaphore-app|semaphore-db)" || true
+      register: remaining_mounts_all
+      changed_when: false
+
+    - name: Display remaining mounts
+      debug:
+        msg: "{{ remaining_mounts_all.stdout_lines }}"
+      when: remaining_mounts_all.stdout != ""
+
+    - name: Force unmount any remaining nullfs mounts
+      shell: |
+        mount -t nullfs | grep "semaphore-app" | awk '{print $3}' | xargs -r -n1 umount -f || true
+        mount -t nullfs | grep "semaphore-db" | awk '{print $3}' | xargs -r -n1 umount -f || true
+      when: remaining_mounts_all.stdout != ""
+      ignore_errors: yes
+
+    - name: Check for remaining jail processes
+      shell: jls | grep -E "(semaphore-app|semaphore-db)" || true
+      register: remaining_jails
+      changed_when: false
+
+    - name: Display remaining jails if any
+      debug:
+        msg: "{{ remaining_jails.stdout_lines }}"
+      when: remaining_jails.stdout != ""
+
+    - name: Force kill remaining jail processes if needed
+      shell: |
+        jls -j semaphore-app jid 2>/dev/null | xargs -r jail -r || true
+        jls -j semaphore-db jid 2>/dev/null | xargs -r jail -r || true
+      ignore_errors: yes
+
+    - name: Remove jail configurations
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/etc/jail.conf.d/semaphore-app.conf
+        - /usr/local/etc/jail.conf.d/semaphore-db.conf
+        - /usr/local/etc/jail.fstab.d/semaphore-app.fstab
+        - /usr/local/etc/jail.fstab.d/semaphore-db.fstab
+
+    - name: Remove jail rc.conf entries
+      lineinfile:
+        path: /etc/rc.conf
+        regexp: "{{ item }}"
+        state: absent
+      loop:
+        - '^jail_list=.*semaphore.*'
+        - '^jail_semaphore_app_.*'
+        - '^jail_semaphore_db_.*'
+
+    - name: Check if ZFS datasets exist
+      shell: zfs list -H -o name | grep "{{ zfs_pool }}/{{ jail_dataset }}/data"
+      register: existing_datasets
+      changed_when: false
+      failed_when: false
+
+    - name: Display datasets to be destroyed
+      debug:
+        msg: "Will destroy: {{ existing_datasets.stdout_lines }}"
+      when: existing_datasets.stdout != ""
+
+    - name: Force unmount Semaphore app dataset
+      command: zfs unmount -f {{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app
+      when: "'semaphore-app' in existing_datasets.stdout"
+      ignore_errors: yes
+
+    - name: Destroy Semaphore app ZFS dataset
+      command: zfs destroy -r {{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app
+      when: "'semaphore-app' in existing_datasets.stdout"
+      ignore_errors: yes
+
+    - name: Force unmount database jail dataset
+      command: zfs unmount -f {{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-db
+      when: "'semaphore-db' in existing_datasets.stdout"
+      ignore_errors: yes
+
+    - name: Destroy database jail ZFS dataset
+      command: zfs destroy -r {{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-db
+      when: "'semaphore-db' in existing_datasets.stdout"
+      ignore_errors: yes
+
+    - name: Destroy Semaphore data ZFS dataset
+      community.general.zfs:
+        name: "{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore"
+        state: absent
+      when: "'semaphore' in existing_datasets.stdout"
+      ignore_errors: yes
+
+    - name: Destroy database data ZFS dataset
+      community.general.zfs:
+        name: "{{ zfs_pool }}/{{ jail_dataset }}/data/db"
+        state: absent
+      when: "'db' in existing_datasets.stdout"
+      ignore_errors: yes
+
+    - name: Check for any remaining ZFS snapshots
+      shell: zfs list -t snapshot | grep "{{ zfs_pool }}/{{ jail_dataset }}/data" || true
+      register: remaining_snapshots
+      changed_when: false
+
+    - name: Display remaining snapshots if any
+      debug:
+        msg: "Remaining snapshots: {{ remaining_snapshots.stdout_lines }}"
+      when: remaining_snapshots.stdout != ""
+
+    - name: Remove log directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/log/jails
+      ignore_errors: yes
+
+    - name: Display final destruction summary
+      debug:
+        msg:
+          - "════════════════════════════════════════"
+          - "✓ DESTRUCTION COMPLETE"
+          - "════════════════════════════════════════"
+          - ""
+          - "Removed:"
+          - "  ✓ Semaphore jail (stopped and destroyed)"
+          - "  ✓ Database jail (stopped and destroyed)"
+          - "  ✓ ZFS datasets (permanently deleted)"
+          - "  ✓ Jail configurations"
+          - ""
+          - "Remaining components:"
+          - "  - Base ZFS datasets: {{ zfs_pool }}/{{ jail_dataset }}/base"
+          - "  - FreeBSD base system files"
+          - "  - PF firewall rules (may need manual cleanup)"
+          - ""
+          - "To redeploy: make deploy"
+          - "════════════════════════════════════════"
+
+    - name: Show manual cleanup commands if needed
+      debug:
+        msg:
+          - ""
+          - "Optional manual cleanup (if needed):"
+          - "  # Remove base jail dataset:"
+          - "  zfs destroy -r {{ zfs_pool }}/{{ jail_dataset }}/base"
+          - ""
+          - "  # Remove all jail datasets:"
+          - "  zfs destroy -r {{ zfs_pool }}/{{ jail_dataset }}"
+          - ""
+          - "  # Review and clean PF rules:"
+          - "  pfctl -sr | grep semaphore"
+          - ""

@@ -1,0 +1,300 @@
+---
+# Backup Semaphore Data (IaC approach - data only, not infrastructure)
+- name: Backup Semaphore Data
+  hosts: jail_hosts
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all/vars.yml
+    - ../group_vars/all/secrets.yml
+
+  tasks:
+    - name: Gather facts
+      setup:
+
+    - name: Set backup variables
+      set_fact:
+        backup_dir: "{{ backup_location | default('/var/backups/semaphore') }}"
+        backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+    - name: Set backup path
+      set_fact:
+        backup_path: "{{ backup_dir }}/{{ backup_timestamp }}"
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_path }}"
+        state: directory
+        mode: '0700'
+
+    # =============================================================================
+    # DATABASE BACKUP (Essential - user data)
+    # =============================================================================
+
+    - name: Debug database variables
+      debug:
+        msg:
+          - "semaphore_db_name: {{ semaphore_db_name | default('UNDEFINED') }}"
+          - "backup_location: {{ backup_location | default('UNDEFINED') }}"
+          - "postgres_version: {{ postgres_version | default('UNDEFINED') }}"
+
+    - name: Backup PostgreSQL database
+      command: >
+        jexec semaphore-db
+        su - postgres -c "pg_dump -Fc {{ semaphore_db_name }} -f /tmp/semaphore_db_{{ backup_timestamp }}.dump"
+
+    - name: Copy database dump to backup directory (from jail to host)
+      command: >
+        cp
+        /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-db/tmp/semaphore_db_{{ backup_timestamp }}.dump
+        {{ backup_path }}/database.dump
+
+    - name: Remove temporary database dump from jail
+      command: >
+        jexec semaphore-db
+        rm -f /tmp/semaphore_db_{{ backup_timestamp }}.dump
+
+    - name: Get database dump size
+      stat:
+        path: "{{ backup_path }}/database.dump"
+      register: db_dump_stat
+
+    # =============================================================================
+    # RUNTIME DATA BACKUP (Optional but recommended)
+    # =============================================================================
+
+    - name: Backup Semaphore runtime data
+      shell: |
+        jexec semaphore-app tar -czf /tmp/semaphore-data.tar.gz -C /usr/local/etc/semaphore --exclude='*.log' .
+
+    - name: Copy Semaphore data to backup directory
+      command: >
+        cp
+        /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/tmp/semaphore-data.tar.gz
+        {{ backup_path }}/semaphore-data.tar.gz
+
+    - name: Remove temporary Semaphore data from jail
+      command: >
+        jexec semaphore-app
+        rm -f /tmp/semaphore-data.tar.gz
+
+    # =============================================================================
+    # CERTIFICATES BACKUP (If using existing/custom certs)
+    # =============================================================================
+
+    - name: Check if custom certificates exist
+      stat:
+        path: /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/usr/local/etc/ssl/semaphore.crt
+      register: cert_exists
+
+    - name: Backup TLS certificates (if custom/existing)
+      shell: |
+        jexec semaphore-app tar -czf /tmp/certificates.tar.gz -C /usr/local/etc/ssl .
+      when: cert_exists.stat.exists and tls_cert_strategy == "existing"
+
+    - name: Copy certificates to backup directory
+      command: >
+        cp
+        /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/tmp/certificates.tar.gz
+        {{ backup_path }}/certificates.tar.gz
+      when: cert_exists.stat.exists and tls_cert_strategy == "existing"
+
+    - name: Remove temporary certificates from jail
+      command: >
+        jexec semaphore-app
+        rm -f /tmp/certificates.tar.gz
+      when: cert_exists.stat.exists and tls_cert_strategy == "existing"
+
+    # =============================================================================
+    # CUSTOM CA CERTIFICATES BACKUP (If imported)
+    # =============================================================================
+
+    - name: Backup custom CA certificates
+      shell: |
+        jexec semaphore-app tar -czf /tmp/custom-ca.tar.gz -C {{ custom_ca_dir }} .
+      when: custom_ca_enabled | default(false)
+      ignore_errors: yes
+
+    - name: Copy custom CA to backup directory
+      command: >
+        cp
+        /{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/tmp/custom-ca.tar.gz
+        {{ backup_path }}/custom-ca.tar.gz
+      when: custom_ca_enabled | default(false)
+      ignore_errors: yes
+
+    - name: Remove temporary custom CA from jail
+      command: >
+        jexec semaphore-app
+        rm -f /tmp/custom-ca.tar.gz
+      when: custom_ca_enabled | default(false)
+      ignore_errors: yes
+
+    # =============================================================================
+    # BACKUP METADATA
+    # =============================================================================
+
+    - name: Create backup metadata file
+      copy:
+        content: |
+          Backup created: {{ ansible_date_time.iso8601 }}
+          Semaphore version: {{ semaphore_version }}
+          PostgreSQL version: {{ postgres_version }}
+          Database name: {{ semaphore_db_name }}
+          Backup type: Data-only (IaC approach)
+
+          Contents:
+          - database.dump: PostgreSQL database dump ({{ (db_dump_stat.stat.size / 1024 / 1024) | round(2) }} MB)
+          - semaphore-data.tar.gz: Semaphore runtime configuration
+          {% if cert_exists.stat.exists and tls_cert_strategy == "existing" %}- certificates.tar.gz: TLS certificates
+          {% endif %}{% if custom_ca_enabled | default(false) %}- custom-ca.tar.gz: Custom CA certificates
+          {% endif %}
+          To restore manually:
+          1. Deploy infrastructure: ansible-playbook site.yml
+          2. Stop Semaphore: jexec semaphore-app service semaphore stop
+          3. Restore DB: jexec semaphore-db su - postgres -c 'pg_restore -d {{ semaphore_db_name }} /path/to/database.dump'
+          4. Restore config: tar -xzf semaphore-data.tar.gz -C /zroot/jails/data/semaphore-app/usr/local/etc/semaphore
+          5. Fix permissions: jexec semaphore-app chown root:semaphore /usr/local/etc/semaphore/config.json
+          6. Fix permissions: jexec semaphore-app chmod 0640 /usr/local/etc/semaphore/config.json
+          7. Start Semaphore: jexec semaphore-app service semaphore start
+
+          Or use automated disaster recovery:
+          ansible-playbook playbooks/disaster-recovery.yml -e backup_timestamp={{ backup_timestamp }}
+        dest: "{{ backup_path }}/backup-info.txt"
+        mode: '0600'
+
+    # =============================================================================
+    # OPTIONAL: ZFS SNAPSHOTS (for quick rollback)
+    # =============================================================================
+
+    - name: Take ZFS snapshot of database (optional - for quick rollback)
+      community.general.zfs:
+        name: "{{ zfs_pool }}/{{ jail_dataset }}/data/db@backup-{{ backup_timestamp }}"
+        state: present
+        extra_zfs_properties:
+          type: snapshot
+      when: backup_zfs_snapshots | default(false)
+
+    - name: Take ZFS snapshot of Semaphore (optional - for quick rollback)
+      community.general.zfs:
+        name: "{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore@backup-{{ backup_timestamp }}"
+        state: present
+        extra_zfs_properties:
+          type: snapshot
+      when: backup_zfs_snapshots | default(false)
+
+    # =============================================================================
+    # BACKUP VERIFICATION & COMPRESSION
+    # =============================================================================
+
+    - name: Calculate backup directory size
+      shell: du -sh {{ backup_path }} | cut -f1
+      register: backup_size
+      changed_when: false
+
+    - name: Create compressed archive of entire backup (optional)
+      archive:
+        path: "{{ backup_path }}"
+        dest: "{{ backup_dir }}/semaphore-backup-{{ backup_timestamp }}.tar.gz"
+        format: gz
+        remove: no
+      when: backup_compress | default(false)
+
+    # =============================================================================
+    # CLEANUP OLD BACKUPS
+    # =============================================================================
+
+    - name: Find old backups (age-based)
+      find:
+        paths: "{{ backup_dir }}"
+        age: "{{ backup_retention_days }}d"
+        file_type: directory
+      register: old_backups_age
+      when: backup_retention_days is defined
+
+    - name: Remove old backups (age-based)
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_backups_age.files }}"
+      when:
+        - backup_retention_days is defined
+        - old_backups_age.files | length > 0
+
+    - name: Find all backups (count-based retention)
+      find:
+        paths: "{{ backup_dir }}"
+        file_type: directory
+        patterns: "20*"
+      register: all_backups
+      when: backup_retention_count is defined
+
+    - name: Sort backups by modification time (newest first)
+      set_fact:
+        sorted_backups: "{{ all_backups.files | sort(attribute='mtime', reverse=true) }}"
+      when:
+        - backup_retention_count is defined
+        - all_backups.files | length > 0
+
+    - name: Identify backups to remove (keep last N)
+      set_fact:
+        backups_to_remove: "{{ sorted_backups[backup_retention_count | int:] }}"
+      when:
+        - backup_retention_count is defined
+        - sorted_backups is defined
+        - sorted_backups | length > (backup_retention_count | int)
+
+    - name: Remove old backups (count-based)
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ backups_to_remove }}"
+      when:
+        - backup_retention_count is defined
+        - backups_to_remove is defined
+        - backups_to_remove | length > 0
+
+    - name: Display retention summary
+      debug:
+        msg:
+          - "🗑️  Backup Retention:"
+          - "{% if backup_retention_days is defined %}   • Age-based: Removed {{ old_backups_age.files | default([]) | length }} backup(s) older than {{ backup_retention_days }} days{% endif %}"
+          - "{% if backup_retention_count is defined %}   • Count-based: Keeping last {{ backup_retention_count }} backup(s), removed {{ backups_to_remove | default([]) | length }}{% endif %}"
+          - "   • Total backups remaining: {{ (sorted_backups | default(all_backups.files | default([])) | length) - (backups_to_remove | default([]) | length) }}"
+      when: backup_retention_days is defined or backup_retention_count is defined
+
+    # =============================================================================
+    # DISPLAY BACKUP SUMMARY
+    # =============================================================================
+
+    - name: Display backup summary
+      debug:
+        msg:
+          - "✓ Data backup completed successfully!"
+          - ""
+          - "📦 Backup Information:"
+          - "   Timestamp: {{ backup_timestamp }}"
+          - "   Location: {{ backup_path }}"
+          - "   Size: {{ backup_size.stdout }}"
+          - ""
+          - "📁 Backed up data:"
+          - "   • PostgreSQL database: {{ (db_dump_stat.stat.size / 1024 / 1024) | round(2) }} MB"
+          - "   • Semaphore configuration"
+          - "{% if cert_exists.stat.exists and tls_cert_strategy == 'existing' %}   • TLS certificates{% endif %}"
+          - "{% if custom_ca_enabled | default(false) %}   • Custom CA certificates{% endif %}"
+          - "{% if backup_zfs_snapshots | default(false) %}   • ZFS snapshots (for quick rollback){% endif %}"
+          - ""
+          - "♻️  IaC Approach:"
+          - "   Infrastructure can be recreated with: ansible-playbook site.yml"
+          - "   Only data needs to be restored"
+          - ""
+          - "📝 To restore this backup:"
+          - "   1. Deploy infrastructure: ansible-playbook site.yml"
+          - "   2. Stop Semaphore: jexec semaphore-app service semaphore stop"
+          - "   3. Restore DB: jexec semaphore-db su - postgres -c 'pg_restore -d {{ semaphore_db_name }} {{ backup_path }}/database.dump'"
+          - "   4. Restore data: tar -xzf {{ backup_path }}/semaphore-data.tar.gz -C /path/to/semaphore/config"
+          - "   5. Fix permissions: jexec semaphore-app chown root:semaphore /usr/local/etc/semaphore/config.json"
+          - "   6. Fix permissions: jexec semaphore-app chmod 0640 /usr/local/etc/semaphore/config.json"
+          - "   7. Start Semaphore: jexec semaphore-app service semaphore start"
+          - ""
+          - "💡 Or use the automated disaster recovery playbook:"
+          - "   ansible-playbook playbooks/disaster-recovery.yml -e backup_timestamp={{ backup_timestamp }}"

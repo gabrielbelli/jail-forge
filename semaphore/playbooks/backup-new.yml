@@ -1,0 +1,14 @@
+---
+- name: Test Variable Loading
+  hosts: jail_hosts
+  gather_facts: false
+  tasks:
+    - name: Debug all variables
+      debug:
+        msg:
+          - "semaphore_db_name: {{ semaphore_db_name | default('UNDEFINED') }}"
+          - "semaphore_version: {{ semaphore_version | default('UNDEFINED') }}"
+
+    - name: Debug hostvars
+      debug:
+        var: hostvars[inventory_hostname]

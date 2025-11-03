@@ -1,0 +1,6 @@
+---
+# Handlers for jail-base role
+- name: reload jails
+  command: service jail restart
+  listen: reload jails
+  failed_when: false

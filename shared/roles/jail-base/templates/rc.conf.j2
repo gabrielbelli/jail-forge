@@ -1,0 +1,16 @@
+# Jail rc.conf for {{ jail_name }}
+hostname="{{ jail_hostname }}"
+
+# Disable services not needed in jail
+syslogd_enable="{{ 'YES' if jail_syslog_enabled else 'NO' }}"
+sendmail_enable="{{ 'YES' if jail_sendmail_enabled else 'NO' }}"
+sendmail_submit_enable="NO"
+sendmail_outbound_enable="NO"
+sendmail_msp_queue_enable="NO"
+
+# Network
+ifconfig_DEFAULT="DHCP"
+defaultrouter="{{ jail_gateway | default('') }}"
+
+# Security
+clear_tmp_enable="YES"

@@ -1,0 +1,40 @@
+{{ jail_name }} {
+    host.hostname = "{{ jail_hostname }}";
+    path = "{{ jail_path }}";
+
+    # Network configuration
+{% if jail_vnet %}
+    vnet;
+    vnet.interface = "{{ jail_interface }}";
+{% else %}
+    ip4.addr = {{ jail_ip }};
+    interface = {{ jail_interface }};
+{% endif %}
+
+    # Startup/shutdown
+    exec.start = "/bin/sh /etc/rc";
+    exec.stop = "/bin/sh /etc/rc.shutdown";
+    exec.clean;
+    mount.devfs;
+{% if jail_mounts | length > 0 %}
+    mount.fstab = "/usr/local/etc/jail.fstab.d/{{ jail_name }}.fstab";
+{% endif %}
+
+    # Allow certain privileges
+    allow.raw_sockets = {{ '1' if jail_allow_raw_sockets else '0' }};
+    allow.sysvipc = 1;
+    allow.mount = {{ '1' if jail_allow_mount else '0' }};
+    allow.mount.devfs = {{ '1' if jail_allow_mount_devfs else '0' }};
+    allow.mount.nullfs = {{ '1' if jail_allow_mount_nullfs else '0' }};
+    allow.mount.zfs = {{ '1' if jail_allow_mount_zfs else '0' }};
+
+    # Security
+    devfs_ruleset = {{ jail_devfs_ruleset }};
+    enforce_statfs = 2;
+
+    # Enable/disable services
+{% if jail_syslog_enabled %}
+    exec.system_user = "root";
+    exec.jail_user = "root";
+{% endif %}
+}

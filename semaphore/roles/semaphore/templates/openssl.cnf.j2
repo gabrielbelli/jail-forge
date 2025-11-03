@@ -1,0 +1,26 @@
+# OpenSSL configuration for self-signed certificate generation
+[req]
+default_bits = {{ tls_cert_key_size }}
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = v3_req
+
+[dn]
+C = {{ tls_cert_country }}
+ST = {{ tls_cert_state }}
+L = {{ tls_cert_locality }}
+O = {{ tls_cert_organization }}
+OU = {{ tls_cert_organizational_unit }}
+CN = {{ tls_cert_common_name }}
+emailAddress = {{ tls_cert_email }}
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+{% for san in tls_cert_san %}
+{{ san.split(':')[0] }}.{{ loop.index }} = {{ san.split(':')[1] }}
+{% endfor %}

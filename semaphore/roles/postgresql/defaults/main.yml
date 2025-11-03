@@ -1,0 +1,31 @@
+---
+# Default variables for postgresql role
+postgres_version: "15"
+postgres_data_dir: /var/db/postgres/data{{ postgres_version }}
+postgres_port: 5432
+postgres_listen_addresses: "*"
+postgres_max_connections: 100
+postgres_shared_buffers: "128MB"
+postgres_work_mem: "4MB"
+postgres_maintenance_work_mem: "64MB"
+
+# Authentication
+postgres_auth_method: "scram-sha-256"
+postgres_password_encryption: "scram-sha-256"
+
+# Logging
+postgres_log_destination: "stderr"
+postgres_logging_collector: true
+postgres_log_directory: "log"
+postgres_log_filename: "postgresql-%Y-%m-%d_%H%M%S.log"
+postgres_log_rotation_age: "1d"
+postgres_log_rotation_size: "10MB"
+
+# Performance tuning
+postgres_effective_cache_size: "256MB"
+postgres_checkpoint_completion_target: 0.9
+postgres_wal_buffers: "16MB"
+
+# Databases and users (will be set from inventory)
+postgres_databases: []
+postgres_users: []

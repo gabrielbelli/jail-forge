@@ -1,0 +1,33 @@
+---
+# Default variables for jail-base role
+jail_name: "myjail"
+jail_ip: "192.168.1.100"
+jail_interface: "em0"
+jail_autostart: true
+jail_vnet: false
+jail_devfs_ruleset: 4
+
+# ZFS settings
+jail_zfs_enabled: true
+jail_zfs_dataset: "{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}"
+
+# Base system
+jail_base_path: "/{{ zfs_pool }}/{{ jail_dataset }}/base"
+jail_path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/{{ jail_name }}"
+
+# Jail parameters
+jail_hostname: "{{ jail_name }}.local"
+jail_allow_raw_sockets: false
+jail_allow_mount: true
+jail_allow_mount_devfs: true
+jail_allow_mount_nullfs: true
+jail_allow_mount_zfs: false
+jail_exec_clean: true
+
+# Service configuration
+jail_syslog_enabled: true
+jail_sendmail_enabled: false
+
+# Nullfs mounts (optional): Mount host directories into jail
+# Format: { src: "/host/path", dest: "/jail/path", options: "ro" }
+jail_mounts: []

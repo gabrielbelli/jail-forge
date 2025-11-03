@@ -1,0 +1,35 @@
+# Sample newsyslog configuration for Semaphore
+# Copy this to /etc/newsyslog.conf.d/semaphore.conf on the BSD host
+#
+# IMPORTANT: Semaphore does not support signal-based log reopening!
+# The service must be restarted after log rotation for proper operation.
+#
+# Format:
+# logfilename [owner:group] mode count size when flags [/pid_file] [sig_num]
+#
+# Flags:
+#   J = compress with bzip2
+#   C = create file if it doesn't exist
+#   @ = time-based rotation (T00 = daily at midnight)
+#
+# The script /usr/local/bin/semaphore-semaphore-app-logsignal.sh
+# is deployed by Ansible and restarts Semaphore after log rotation.
+
+# Daily rotation at midnight, keep 30 days, compress with bzip2
+/var/log/semaphore-jails/semaphore-app/semaphore.log	965:965	640	30	*	@T00	JC	/usr/local/bin/semaphore-semaphore-app-logsignal.sh
+
+# Alternative examples:
+#
+# Weekly rotation on Sunday at 3 AM, keep 12 weeks (3 months)
+# /var/log/semaphore-jails/semaphore-app/semaphore.log	965:965	640	12	*	@W0T03	JC	/usr/local/bin/semaphore-semaphore-app-logsignal.sh
+#
+# Size-based rotation: rotate when log reaches 10MB, keep 20 files
+# /var/log/semaphore-jails/semaphore-app/semaphore.log	965:965	640	20	10240	*	JC	/usr/local/bin/semaphore-semaphore-app-logsignal.sh
+#
+# Hourly rotation for high-volume environments (note: will cause frequent restarts!)
+# /var/log/semaphore-jails/semaphore-app/semaphore.log	965:965	640	168	*	@T00	JC	/usr/local/bin/semaphore-semaphore-app-logsignal.sh
+
+# After creating this file, test with:
+#   newsyslog -v -f /etc/newsyslog.conf.d/semaphore.conf
+#
+# newsyslog runs automatically via cron daily by default on FreeBSD
