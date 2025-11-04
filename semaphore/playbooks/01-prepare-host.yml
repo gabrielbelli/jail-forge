@@ -62,12 +62,19 @@
       changed_when: "'No updates' not in update_result.stdout"
       failed_when: false
 
-    - name: Enable jail service in rc.conf
-      lineinfile:
-        path: /etc/rc.conf
-        regexp: '^jail_enable='
-        line: 'jail_enable="YES"'
-        create: yes
+    - name: Create rc.conf.d directory
+      file:
+        path: /etc/rc.conf.d
+        state: directory
+        mode: '0755'
+
+    - name: Enable jail service in rc.conf.d
+      copy:
+        dest: /etc/rc.conf.d/jail-forge
+        content: |
+          # jail-forge managed configuration
+          jail_enable="YES"
+        mode: '0644'
 
     - name: Configure jail.conf
       template:
@@ -92,9 +99,9 @@
           pass out on {{ jail_interface }} from { {{ jail_ip_database }}, {{ jail_ip_semaphore }} }
       notify: reload pf
 
-    - name: Enable pf in rc.conf
+    - name: Enable pf in rc.conf.d
       lineinfile:
-        path: /etc/rc.conf
+        path: /etc/rc.conf.d/jail-forge
         regexp: '^pf_enable='
         line: 'pf_enable="YES"'
         create: yes
