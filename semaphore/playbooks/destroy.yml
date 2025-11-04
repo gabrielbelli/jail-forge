@@ -81,6 +81,16 @@
         - /usr/local/etc/jail.fstab.d/semaphore-app.fstab
         - /usr/local/etc/jail.fstab.d/semaphore-db.fstab
 
+    - name: Remove jail autostart entries
+      lineinfile:
+        path: /etc/rc.conf.d/jail-forge
+        regexp: '^jail_{{ item }}_enable='
+        state: absent
+      loop:
+        - semaphore-app
+        - semaphore-db
+      ignore_errors: yes
+
     - name: Destroy ZFS datasets (optional - commented for safety)
       debug:
         msg: |
