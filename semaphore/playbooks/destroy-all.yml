@@ -34,14 +34,14 @@
     - name: Validate destruction confirmation
       assert:
         that:
-          - (destruction_confirmation.user_input | default('no') | lower == 'destroy-everything') or (confirm_destroy_all | default('no') | lower == 'destroy-everything')
+          - (destruction_confirmation.user_input | default('no') | trim | lower == 'destroy-everything') or (confirm_destroy_all | default('no') | trim | lower == 'destroy-everything')
         fail_msg: "Destruction cancelled - confirmation text did not match"
         success_msg: "Confirmed - proceeding with COMPLETE destruction"
 
 # Step 2: Run standard destroy playbook (stops services, removes configs, cleans rc.conf.d)
 - import_playbook: destroy.yml
   vars:
-    confirm_destroy: yes
+    confirm_destroy: "yes"
 
 # Step 3: Destroy ZFS datasets (the "all" part)
 - name: Destroy ZFS Datasets
@@ -49,6 +49,7 @@
   gather_facts: false
   vars_files:
     - ../group_vars/all/vars.yml
+    - ../group_vars/all/secrets.yml
 
   tasks:
     - name: Check if ZFS datasets exist
