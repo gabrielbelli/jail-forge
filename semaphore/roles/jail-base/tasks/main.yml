@@ -125,20 +125,13 @@
     dest: "{{ jail_path }}/etc/rc.conf"
     mode: '0644'
 
-- name: Get current jail_list
-  shell: sysrc -n jail_list 2>/dev/null || echo ""
-  register: current_jail_list
-  changed_when: false
-  when: jail_autostart
-
-- name: Build new jail_list
-  set_fact:
-    new_jail_list: "{{ (current_jail_list.stdout.split() + [jail_name]) | unique | join(' ') }}"
-  when: jail_autostart
-
 - name: Ensure jail is set to autostart
-  command: sysrc jail_list="{{ new_jail_list }}"
-  when: jail_autostart and new_jail_list is defined
+  lineinfile:
+    path: /etc/rc.conf.d/jail-forge
+    regexp: '^jail_{{ jail_name }}_enable='
+    line: 'jail_{{ jail_name }}_enable="YES"'
+    create: yes
+  when: jail_autostart
 
 - name: Display jail information
   debug:
