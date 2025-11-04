@@ -103,15 +103,15 @@
         - /usr/local/etc/jail.fstab.d/semaphore-app.fstab
         - /usr/local/etc/jail.fstab.d/semaphore-db.fstab
 
-    - name: Remove jail rc.conf entries
+    - name: Remove jail autostart entries
       lineinfile:
-        path: /etc/rc.conf
-        regexp: "{{ item }}"
+        path: /etc/rc.conf.d/jail-forge
+        regexp: '^jail_{{ item }}_enable='
         state: absent
       loop:
-        - '^jail_list=.*semaphore.*'
-        - '^jail_semaphore_app_.*'
-        - '^jail_semaphore_db_.*'
+        - semaphore-app
+        - semaphore-db
+      ignore_errors: yes
 
     - name: Check if ZFS datasets exist
       shell: zfs list -H -o name | grep "{{ zfs_pool }}/{{ jail_dataset }}/data"
