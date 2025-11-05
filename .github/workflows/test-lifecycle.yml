@@ -90,18 +90,14 @@ jobs:
           EOF
           chmod 644 inventory/hosts.yml
 
-      - name: Create secrets.yml from GitHub Secrets
+      - name: Create secrets.yml from template and GitHub Secrets
         working-directory: semaphore
         run: |
-          cat > group_vars/all/secrets.yml <<EOF
-          ---
-          # Database configuration
-          db_password: "${{ secrets.DB_PASSWORD }}"
-
-          # Semaphore configuration
-          semaphore_admin_password: "${{ secrets.SEMAPHORE_ADMIN_PASSWORD }}"
-          semaphore_access_key_encryption: "${{ secrets.SEMAPHORE_ACCESS_KEY_ENCRYPTION }}"
-          EOF
+          # Copy template and replace placeholders with actual secrets
+          sed -e "s/{{DB_PASSWORD}}/${{ secrets.DB_PASSWORD }}/g" \
+              -e "s/{{SEMAPHORE_ADMIN_PASSWORD}}/${{ secrets.SEMAPHORE_ADMIN_PASSWORD }}/g" \
+              -e "s/{{SEMAPHORE_ACCESS_KEY_ENCRYPTION}}/${{ secrets.SEMAPHORE_ACCESS_KEY_ENCRYPTION }}/g" \
+              group_vars/all/secrets.yml.template > group_vars/all/secrets.yml
           chmod 600 group_vars/all/secrets.yml
 
       - name: Verify secrets.yml was created
