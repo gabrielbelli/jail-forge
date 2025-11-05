@@ -27,31 +27,18 @@ Ansible automation and deployment platform with PostgreSQL backend.
 
 ```
 jail-forge/
-├── LICENSE                   # BSD 2-Clause License
 ├── README.md                 # This file
-├── TEMPLATE-GUIDE.md         # Comprehensive guide for creating new deployments
-│
-├── shared/                   # Shared resources across all applications
-│   ├── roles/
-│   │   └── jail-base/       # Base jail configuration (ZFS, networking)
-│   └── docs/
-│       ├── JAIL-NETWORKING.md   # Networking patterns
-│       ├── BACKUP-STRATEGIES.md # Backup approaches
-│       └── SECURITY.md          # Security best practices
-│
-├── semaphore/                # Ansible Semaphore deployment
+├── CONTRIBUTING.md           # How to contribute
+├── LICENSE                   # BSD 2-Clause License
+├── .github/workflows/        # CI/CD testing
+├── shared/roles/jail-base/   # Base jail role (reusable)
+├── semaphore/                # Semaphore deployment
 │   ├── README.md
-│   ├── ansible.cfg
-│   ├── site.yml
 │   ├── Makefile
-│   ├── inventory/
-│   ├── group_vars/
-│   ├── roles/
 │   ├── playbooks/
-│   ├── scripts/
-│   └── docs/
-│
-└── <future-apps>/            # More applications coming soon!
+│   ├── inventory/
+│   └── group_vars/
+└── <your-app>/               # Your application here
 ```
 
 ## Quick Start
@@ -115,33 +102,62 @@ Every deployment includes:
 
 ## Adding New Applications
 
-Want to add a new application to jail-forge? See [INTEGRATION.md](./INTEGRATION.md) for a comprehensive step-by-step guide.
+Adding a new application follows this pattern:
 
-The integration guide covers:
-- Prerequisites and planning checklist
-- 12-step integration process
-- Playbook customization patterns
-- Complete worked example (Nextcloud)
-- GitHub Actions integration
-- Testing and troubleshooting
+### 1. Create Application Directory
+```bash
+mkdir -p myapp/{playbooks,inventory,group_vars/all,roles,scripts}
+```
 
-For historical context and additional patterns, see [TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md).
+### 2. Copy Configuration Templates
+```bash
+# From an existing app like semaphore
+cp -r semaphore/inventory/hosts.yml.example myapp/inventory/
+cp -r semaphore/group_vars/all/secrets.yml.template myapp/group_vars/all/
+cp semaphore/{ansible.cfg,Makefile} myapp/
+```
 
-## Shared Resources
+### 3. Create Core Playbooks
 
-### Roles
+Each app needs these playbooks in `playbooks/`:
+- `prepare-host.yml` - Create ZFS datasets, install jail-forge
+- `deploy-db.yml` - Setup database jail (PostgreSQL/MySQL/etc)
+- `deploy-app.yml` - Setup application jail and software
+- `backup.yml` - Backup data directories
+- `restore.yml` - Restore from backup
+- `destroy-all.yml` - Clean teardown
 
-#### `jail-base`
-Base jail configuration used by all applications:
-- ZFS dataset creation
-- Jail configuration files
-- Network setup
-- Nullfs mounts
-- Basic jail lifecycle
+Use semaphore as a reference implementation.
 
-### Shared Documentation
+### 4. Update GitHub Actions
 
-See the [Documentation](#documentation) section below for shared resources documentation (networking, backup strategies, security).
+Add your app to `.github/workflows/test-lifecycle.yml`:
+```yaml
+APPS_JSON: |
+  [
+    { "name": "semaphore", ... },
+    {
+      "name": "myapp",
+      "working_dir": "myapp",
+      "jail_name": "myapp-app",
+      "port": 8080,
+      "health_endpoint": "/health",
+      "service_name": "myapp",
+      "backup_location": "/var/backups/myapp"
+    }
+  ]
+```
+
+### 5. Test Lifecycle
+```bash
+cd myapp
+make deploy    # Deploy full stack
+make backup    # Test backup
+make restore   # Test restore
+```
+
+That's it. Keep it simple.
+
 
 ## Requirements
 
@@ -174,44 +190,7 @@ Want to contribute a deployment? Fork the repo and submit a PR!
 
 ## Testing
 
-All deployments in this repository are tested on:
-- FreeBSD 13.5-RELEASE
-- ZFS filesystem
-- Ansible 2.15+
-- Production-like scenarios (deploy, backup, restore, disaster recovery)
-
-Each application directory contains a `TESTING-STATUS.md` documenting test results.
-
-## Documentation
-
-### Getting Started
-1. **[README.md](./README.md)** (this file) - Project overview and quick start
-2. **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System design, philosophy, and technical concepts
-3. **[INTEGRATION.md](./INTEGRATION.md)** - Step-by-step guide for adding new applications
-
-### Shared Resources
-- **[shared/docs/JAIL-NETWORKING.md](./shared/docs/JAIL-NETWORKING.md)** - IP alias vs VNET, static vs DHCP, networking patterns
-- **[shared/docs/BACKUP-STRATEGIES.md](./shared/docs/BACKUP-STRATEGIES.md)** - Time-based vs count-based retention, ZFS snapshots, encryption
-- **[shared/docs/SECURITY.md](./shared/docs/SECURITY.md)** - PF configuration, TLS setup, secret management, jail hardening
-
-### Application-Specific
-Each application has its own documentation in `<app>/`:
-- `<app>/README.md` - Application quick start and overview
-- `<app>/TESTING-STATUS.md` - Test results and validation status
-- `<app>/docs/` - Detailed documentation (deployment, operations, backup/restore, etc.)
-- `<app>/playbooks/README.md` - Playbook descriptions and usage
-
-Example for Semaphore: [semaphore/README.md](./semaphore/README.md), [semaphore/docs/](./semaphore/docs/)
-
-### CI/CD
-- **[.github/TESTING.md](.github/TESTING.md)** - GitHub Actions workflow setup and usage
-
-### Contributing
-- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Guidelines for adding applications, improving deployments, and submitting PRs
-
-### Reference
-- **[TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md)** - Original deployment guide (historical reference)
-- **[LICENSE](./LICENSE)** - BSD 2-Clause License
+GitHub Actions tests the full lifecycle automatically. See [.github/TESTING.md](.github/TESTING.md) for CI/CD setup.
 
 ## License
 
