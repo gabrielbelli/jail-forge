@@ -21,22 +21,52 @@ GitHub Secrets are encrypted environment variables that you can use in your work
 
 ### Step 2: Add Required Secrets
 
-Click **"New repository secret"** for each of these:
+Click **"New repository secret"** for each of these **8 secrets**:
 
-#### Secret 1: `DB_PASSWORD`
+#### Application Secrets
+
+**1. DB_PASSWORD**
 - **Name**: `DB_PASSWORD`
 - **Secret**: Your PostgreSQL database password
-- Example: The value from `db_password` in your local `group_vars/all/secrets.yml`
+- Get from: `semaphore_db_password` in `group_vars/all/secrets.yml`
 
-#### Secret 2: `SEMAPHORE_ADMIN_PASSWORD`
+**2. SEMAPHORE_ADMIN_PASSWORD**
 - **Name**: `SEMAPHORE_ADMIN_PASSWORD`
 - **Secret**: Your Semaphore admin password
-- Example: The value from `semaphore_admin_password` in your local `group_vars/all/secrets.yml`
+- Get from: `semaphore_admin_password` in `group_vars/all/secrets.yml`
 
-#### Secret 3: `SEMAPHORE_ACCESS_KEY_ENCRYPTION`
+**3. SEMAPHORE_ACCESS_KEY_ENCRYPTION**
 - **Name**: `SEMAPHORE_ACCESS_KEY_ENCRYPTION`
 - **Secret**: Your Semaphore encryption key
-- Example: The value from `semaphore_access_key_encryption` in your local `group_vars/all/secrets.yml`
+- Get from: `semaphore_access_key_encryption` in `group_vars/all/secrets.yml`
+
+#### Infrastructure Secrets
+
+**4. SSH_PRIVATE_KEY**
+- **Name**: `SSH_PRIVATE_KEY`
+- **Secret**: Your SSH private key (entire content)
+- Get from: `cat ~/.ssh/belli` (or your SSH key path)
+- Include the BEGIN and END lines
+
+**5. BSD_HOST**
+- **Name**: `BSD_HOST`
+- **Secret**: Your BSD host hostname or IP
+- Example: `pedrinhas.gabrielbelli.com`
+
+**6. SSH_USER**
+- **Name**: `SSH_USER`
+- **Secret**: SSH username for BSD host
+- Example: `root`
+
+**7. JAIL_IP_DATABASE**
+- **Name**: `JAIL_IP_DATABASE`
+- **Secret**: IP address for database jail
+- Example: `192.168.1.50`
+
+**8. JAIL_IP_SEMAPHORE**
+- **Name**: `JAIL_IP_SEMAPHORE`
+- **Secret**: IP address for Semaphore jail
+- Example: `192.168.1.51`
 
 ### Step 3: Get Secret Values
 
@@ -48,6 +78,18 @@ cat group_vars/all/secrets.yml
 ```
 
 Copy each value and paste it into the corresponding GitHub Secret.
+
+### Step 4: Verify All Secrets
+
+After adding all secrets, verify you have all 8 (values will be hidden):
+- ✓ BSD_HOST
+- ✓ DB_PASSWORD
+- ✓ JAIL_IP_DATABASE
+- ✓ JAIL_IP_SEMAPHORE
+- ✓ SEMAPHORE_ACCESS_KEY_ENCRYPTION
+- ✓ SEMAPHORE_ADMIN_PASSWORD
+- ✓ SSH_PRIVATE_KEY
+- ✓ SSH_USER
 
 ## Running the Tests
 

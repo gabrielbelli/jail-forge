@@ -29,6 +29,63 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/belli
+          chmod 600 ~/.ssh/belli
+          ssh-keyscan -H ${{ secrets.BSD_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Create inventory/hosts.yml from GitHub Secrets
+        working-directory: semaphore
+        run: |
+          mkdir -p inventory
+          cat > inventory/hosts.yml <<'EOF'
+          ---
+          # Ansible Semaphore on BSD Jails Inventory
+          # Generated from GitHub Secrets
+
+          all:
+            children:
+              # The physical/virtual BSD host that will run the jails
+              jail_hosts:
+                hosts:
+                  bsd-host:
+                    ansible_host: ${{ secrets.BSD_HOST }}
+                    ansible_user: ${{ secrets.SSH_USER }}
+                    ansible_python_interpreter: /usr/local/bin/python3.11
+                    ansible_ssh_private_key_file: ~/.ssh/belli
+
+              # Virtual inventory for jails (will be created by playbooks)
+              jails:
+                children:
+                  database_jails:
+                    hosts:
+                      semaphore-db:
+                        jail_ip: ${{ secrets.JAIL_IP_DATABASE }}
+                        jail_host: bsd-host
+                        jail_autostart: true
+                        jail_vnet: false
+
+                  app_jails:
+                    hosts:
+                      semaphore-app:
+                        jail_ip: ${{ secrets.JAIL_IP_SEMAPHORE }}
+                        jail_host: bsd-host
+                        jail_autostart: true
+                        jail_vnet: false
+                        # Mount logs to host for easy access
+                        jail_mounts:
+                          - { src: "/var/log/semaphore-jails/semaphore-app", dest: "/var/log/semaphore", options: "rw" }
+
+              # Group all jails together for common operations
+              all_jails:
+                children:
+                  database_jails:
+                  app_jails:
+          EOF
+          chmod 644 inventory/hosts.yml
+
       - name: Create secrets.yml from GitHub Secrets
         working-directory: semaphore
         run: |
@@ -120,10 +177,12 @@ jobs:
           ansible -i inventory/hosts.yml jail_hosts -m shell \
             -a "grep -E 'jail_(semaphore-app|semaphore-db)_enable' /etc/rc.conf.d/jail-forge || echo 'No jail entries found (expected)'"
 
-      - name: Cleanup secrets.yml
+      - name: Cleanup sensitive files
         if: always()
-        working-directory: semaphore
-        run: rm -f group_vars/all/secrets.yml
+        run: |
+          rm -f ~/.ssh/belli
+          rm -f semaphore/group_vars/all/secrets.yml
+          rm -f semaphore/inventory/hosts.yml
 
       - name: Test summary
         if: always()
