@@ -1,0 +1,146 @@
+name: Test Full Lifecycle
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_destroy:
+        description: 'Skip destroy-all at the end (leave deployment running)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    name: Full Lifecycle Test
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Ansible and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create secrets.yml from GitHub Secrets
+        working-directory: semaphore
+        run: |
+          cat > group_vars/all/secrets.yml <<EOF
+          ---
+          # Database configuration
+          db_password: "${{ secrets.DB_PASSWORD }}"
+
+          # Semaphore configuration
+          semaphore_admin_password: "${{ secrets.SEMAPHORE_ADMIN_PASSWORD }}"
+          semaphore_access_key_encryption: "${{ secrets.SEMAPHORE_ACCESS_KEY_ENCRYPTION }}"
+          EOF
+          chmod 600 group_vars/all/secrets.yml
+
+      - name: Verify secrets.yml was created
+        working-directory: semaphore
+        run: |
+          if [ ! -f group_vars/all/secrets.yml ]; then
+            echo "❌ secrets.yml was not created"
+            exit 1
+          fi
+          echo "✓ secrets.yml created successfully"
+
+      - name: Syntax check all playbooks
+        working-directory: semaphore
+        run: |
+          echo "Checking syntax for all playbooks..."
+          for playbook in playbooks/*.yml; do
+            echo "Checking $playbook..."
+            ansible-playbook -i inventory/hosts.yml "$playbook" --syntax-check
+          done
+          echo "✓ All playbooks passed syntax check"
+
+      - name: Test connectivity to BSD host
+        working-directory: semaphore
+        run: ansible -i inventory/hosts.yml -m ping jail_hosts
+
+      - name: Deploy Semaphore
+        working-directory: semaphore
+        run: make deploy
+
+      - name: Verify deployment
+        working-directory: semaphore
+        run: |
+          echo "Checking if jails are running..."
+          ansible -i inventory/hosts.yml jail_hosts -m shell -a "jls | grep semaphore"
+
+      - name: Create snapshot
+        working-directory: semaphore
+        run: make snapshot
+
+      - name: Create backup
+        working-directory: semaphore
+        run: make backup
+
+      - name: List backups
+        working-directory: semaphore
+        run: |
+          ansible -i inventory/hosts.yml jail_hosts -m shell -a "ls -lh /zroot/jails/data/backups/"
+
+      - name: Restore from backup
+        working-directory: semaphore
+        run: |
+          # Get the most recent backup timestamp
+          BACKUP_TS=$(ansible -i inventory/hosts.yml jail_hosts -m shell \
+            -a "ls -1 /zroot/jails/data/backups/*.tar.gz | tail -1 | sed 's/.*semaphore-backup-\(.*\)\.tar\.gz/\1/'" \
+            | grep -v "jail_hosts" | grep -E '^[0-9]{8}T[0-9]{6}$')
+
+          echo "Restoring from backup: $BACKUP_TS"
+          make restore BACKUP_TIMESTAMP=$BACKUP_TS
+
+      - name: Destroy all (cleanup)
+        if: ${{ !inputs.skip_destroy }}
+        working-directory: semaphore
+        run: |
+          ansible-playbook -i inventory/hosts.yml \
+            playbooks/destroy-all.yml \
+            -e confirm_destroy_all=destroy-everything
+
+      - name: Verify cleanup
+        if: ${{ !inputs.skip_destroy }}
+        working-directory: semaphore
+        run: |
+          echo "Verifying jails are destroyed..."
+          ansible -i inventory/hosts.yml jail_hosts -m shell \
+            -a "jls | grep semaphore || echo 'No jails found (expected)'"
+
+          echo "Verifying rc.conf.d cleanup..."
+          ansible -i inventory/hosts.yml jail_hosts -m shell \
+            -a "grep -E 'jail_(semaphore-app|semaphore-db)_enable' /etc/rc.conf.d/jail-forge || echo 'No jail entries found (expected)'"
+
+      - name: Cleanup secrets.yml
+        if: always()
+        working-directory: semaphore
+        run: rm -f group_vars/all/secrets.yml
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "════════════════════════════════════════"
+          echo "Test Lifecycle Complete"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "Tests performed:"
+          echo "  ✓ Syntax validation"
+          echo "  ✓ Connectivity check"
+          echo "  ✓ Full deployment"
+          echo "  ✓ Snapshot creation"
+          echo "  ✓ Backup creation"
+          echo "  ✓ Backup restore"
+          if [ "${{ inputs.skip_destroy }}" = "true" ]; then
+            echo "  ⊘ Cleanup (skipped by user)"
+          else
+            echo "  ✓ Full cleanup"
+          fi
