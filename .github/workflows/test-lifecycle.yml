@@ -154,9 +154,9 @@ jobs:
       - name: Restore from backup
         working-directory: semaphore
         run: |
-          # Get the most recent backup timestamp
+          # Get the most recent backup timestamp (backups are directories)
           BACKUP_TS=$(ansible -i inventory/hosts.yml jail_hosts -m shell \
-            -a "ls -1 /var/backups/semaphore/*.tar.gz | tail -1 | sed 's/.*semaphore-backup-\(.*\)\.tar\.gz/\1/'" \
+            -a "ls -1d /var/backups/semaphore/2* | tail -1 | xargs basename" \
             | grep -v "jail_hosts" | grep -E '^[0-9]{8}T[0-9]{6}$')
 
           echo "Restoring from backup: $BACKUP_TS"
