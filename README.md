@@ -139,11 +139,9 @@ Base jail configuration used by all applications:
 - Nullfs mounts
 - Basic jail lifecycle
 
-### Documentation
+### Shared Documentation
 
-- **JAIL-NETWORKING.md**: IP alias vs VNET, static vs DHCP, networking patterns
-- **BACKUP-STRATEGIES.md**: Time-based vs count-based retention, ZFS snapshots, encryption
-- **SECURITY.md**: PF configuration, TLS setup, secret management, jail hardening
+See the [Documentation](#documentation) section below for shared resources documentation (networking, backup strategies, security).
 
 ## Requirements
 
@@ -191,16 +189,29 @@ Each application directory contains a `TESTING-STATUS.md` documenting test resul
 2. **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System design, philosophy, and technical concepts
 3. **[INTEGRATION.md](./INTEGRATION.md)** - Step-by-step guide for adding new applications
 
+### Shared Resources
+- **[shared/docs/JAIL-NETWORKING.md](./shared/docs/JAIL-NETWORKING.md)** - IP alias vs VNET, static vs DHCP, networking patterns
+- **[shared/docs/BACKUP-STRATEGIES.md](./shared/docs/BACKUP-STRATEGIES.md)** - Time-based vs count-based retention, ZFS snapshots, encryption
+- **[shared/docs/SECURITY.md](./shared/docs/SECURITY.md)** - PF configuration, TLS setup, secret management, jail hardening
+
 ### Application-Specific
+Each application has its own documentation in `<app>/`:
 - `<app>/README.md` - Application quick start and overview
-- `<app>/docs/` - Detailed documentation for that application
+- `<app>/TESTING-STATUS.md` - Test results and validation status
+- `<app>/docs/` - Detailed documentation (deployment, operations, backup/restore, etc.)
+- `<app>/playbooks/README.md` - Playbook descriptions and usage
+
+Example for Semaphore: [semaphore/README.md](./semaphore/README.md), [semaphore/docs/](./semaphore/docs/)
 
 ### CI/CD
-- [.github/TESTING.md](.github/TESTING.md) - GitHub Actions workflow setup and usage
+- **[.github/TESTING.md](.github/TESTING.md)** - GitHub Actions workflow setup and usage
+
+### Contributing
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Guidelines for adding applications, improving deployments, and submitting PRs
 
 ### Reference
-- [TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md) - Original deployment guide
-- [LICENSE](./LICENSE) - BSD 2-Clause License
+- **[TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md)** - Original deployment guide (historical reference)
+- **[LICENSE](./LICENSE)** - BSD 2-Clause License
 
 ## License
 
