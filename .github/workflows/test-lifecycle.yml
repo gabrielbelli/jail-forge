@@ -14,7 +14,28 @@ jobs:
     name: Full Lifecycle Test
     runs-on: self-hosted
 
+    env:
+      # =========================================================================
+      # Application Configuration
+      # Define all applications to test in this JSON structure
+      # =========================================================================
+      APPS_JSON: |
+        [
+          {
+            "name": "semaphore",
+            "working_dir": "semaphore",
+            "jail_name": "semaphore-app",
+            "port": 3000,
+            "health_endpoint": "/api/ping",
+            "service_name": "semaphore",
+            "backup_location": "/var/backups/semaphore"
+          }
+        ]
+
     steps:
+      # =========================================================================
+      # PHASE 1: Environment Setup
+      # =========================================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -23,15 +44,21 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: 'semaphore/requirements.txt'
+          cache-dependency-path: '*/requirements.txt'
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y make
+        run: sudo apt-get update && sudo apt-get install -y make jq
 
       - name: Install Ansible and dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r semaphore/requirements.txt
+          # Install dependencies for all apps
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            if [ -f "$app_dir/requirements.txt" ]; then
+              echo "Installing requirements for $app_dir..."
+              pip install -r "$app_dir/requirements.txt"
+            fi
+          done
 
       - name: Set up SSH key
         run: |
@@ -41,12 +68,14 @@ jobs:
           ssh-keyscan -H ${{ secrets.BSD_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Create inventory/hosts.yml from GitHub Secrets
-        working-directory: semaphore
         run: |
-          mkdir -p inventory
-          cat > inventory/hosts.yml <<'EOF'
+          # Create inventory for each app's working directory
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "Creating inventory for $app_dir..."
+            mkdir -p "$app_dir/inventory"
+            cat > "$app_dir/inventory/hosts.yml" <<'EOF'
           ---
-          # Ansible Semaphore on BSD Jails Inventory
+          # Ansible Jail-Forge Inventory
           # Generated from GitHub Secrets
 
           all:
@@ -88,125 +117,210 @@ jobs:
                   database_jails:
                   app_jails:
           EOF
-          chmod 644 inventory/hosts.yml
+            chmod 644 "$app_dir/inventory/hosts.yml"
+          done
 
       - name: Create secrets.yml from template and GitHub Secrets
-        working-directory: semaphore
         run: |
-          # Copy template and replace placeholders with actual secrets
-          sed -e "s|{{DB_PASSWORD}}|${{ secrets.DB_PASSWORD }}|g" \
-              -e "s|{{SEMAPHORE_ADMIN_PASSWORD}}|${{ secrets.SEMAPHORE_ADMIN_PASSWORD }}|g" \
-              -e "s|{{SEMAPHORE_ACCESS_KEY_ENCRYPTION}}|${{ secrets.SEMAPHORE_ACCESS_KEY_ENCRYPTION }}|g" \
-              group_vars/all/secrets.yml.template > group_vars/all/secrets.yml
-          chmod 600 group_vars/all/secrets.yml
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "Creating secrets.yml for $app_dir..."
+            # Copy template and replace placeholders with actual secrets
+            sed -e "s|{{DB_PASSWORD}}|${{ secrets.DB_PASSWORD }}|g" \
+                -e "s|{{SEMAPHORE_ADMIN_PASSWORD}}|${{ secrets.SEMAPHORE_ADMIN_PASSWORD }}|g" \
+                -e "s|{{SEMAPHORE_ACCESS_KEY_ENCRYPTION}}|${{ secrets.SEMAPHORE_ACCESS_KEY_ENCRYPTION }}|g" \
+                "$app_dir/group_vars/all/secrets.yml.template" > "$app_dir/group_vars/all/secrets.yml"
+            chmod 600 "$app_dir/group_vars/all/secrets.yml"
+          done
 
       - name: Verify secrets.yml was created
-        working-directory: semaphore
         run: |
-          if [ ! -f group_vars/all/secrets.yml ]; then
-            echo "❌ secrets.yml was not created"
-            exit 1
-          fi
-          echo "✓ secrets.yml created successfully"
-
-      - name: Syntax check all playbooks
-        working-directory: semaphore
-        run: |
-          echo "Checking syntax for all playbooks..."
-          for playbook in playbooks/*.yml; do
-            # Skip disaster-recovery.yml (requires runtime variables)
-            if [[ "$playbook" == *"disaster-recovery.yml"* ]]; then
-              echo "Skipping $playbook (requires runtime variables)"
-              continue
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            if [ ! -f "$app_dir/group_vars/all/secrets.yml" ]; then
+              echo "❌ secrets.yml was not created for $app_dir"
+              exit 1
             fi
-            echo "Checking $playbook..."
-            ansible-playbook -i inventory/hosts.yml "$playbook" --syntax-check
+            echo "✓ secrets.yml created successfully for $app_dir"
           done
-          echo "✓ All playbooks passed syntax check"
+
+      # =========================================================================
+      # PHASE 2: Pre-flight Validation
+      # =========================================================================
+      - name: Syntax check all playbooks
+        run: |
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "Checking syntax for $app_dir playbooks..."
+            cd "$app_dir"
+            for playbook in playbooks/*.yml; do
+              # Skip disaster-recovery.yml (requires runtime variables)
+              if [[ "$playbook" == *"disaster-recovery.yml"* ]]; then
+                echo "Skipping $playbook (requires runtime variables)"
+                continue
+              fi
+              echo "Checking $playbook..."
+              ansible-playbook -i inventory/hosts.yml "$playbook" --syntax-check
+            done
+            echo "✓ All playbooks passed syntax check for $app_dir"
+            cd ..
+          done
 
       - name: Test connectivity to BSD host
-        working-directory: semaphore
-        run: ansible -i inventory/hosts.yml -m ping jail_hosts
+        run: |
+          # Test connectivity using first app's inventory
+          first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
+          cd "$first_app_dir"
+          ansible -i inventory/hosts.yml -m ping jail_hosts
 
-      - name: Deploy Semaphore
-        working-directory: semaphore
-        run: make deploy
+      # =========================================================================
+      # PHASE 3: Application Deployment
+      # =========================================================================
+      - name: Deploy all applications
+        run: |
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "Deploying $app_dir..."
+            cd "$app_dir"
+            make deploy
+            cd ..
+          done
 
       - name: Verify deployment
-        working-directory: semaphore
         run: |
+          # Use first app's inventory to check all jails
+          first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
           echo "Checking if jails are running..."
-          ansible -i inventory/hosts.yml jail_hosts -m shell -a "jls | grep semaphore"
+          cd "$first_app_dir"
+          ansible -i inventory/hosts.yml jail_hosts -m shell -a "jls"
 
-      - name: Health check Semaphore
-        working-directory: semaphore
+      - name: Health check all applications
         run: |
-          echo "Checking Semaphore service status..."
-          ansible -i inventory/hosts.yml jail_hosts -m shell \
-            -a "jexec semaphore-app service semaphore status"
+          echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while read app; do
+            app_name=$(echo "$app" | jq -r '.name')
+            app_dir=$(echo "$app" | jq -r '.working_dir')
+            jail_name=$(echo "$app" | jq -r '.jail_name')
+            port=$(echo "$app" | jq -r '.port')
+            health_endpoint=$(echo "$app" | jq -r '.health_endpoint')
+            service_name=$(echo "$app" | jq -r '.service_name')
 
-          echo ""
-          echo "Checking if Semaphore port is listening..."
-          ansible -i inventory/hosts.yml jail_hosts -m shell \
-            -a "jexec semaphore-app sockstat -l | grep 3000"
+            echo "================================================="
+            echo "Health checking $app_name"
+            echo "================================================="
 
-          echo ""
-          echo "Testing Semaphore API health endpoint..."
-          ansible -i inventory/hosts.yml jail_hosts -m shell \
-            -a "jexec semaphore-app curl -f -s http://localhost:3000/api/ping || echo 'API endpoint check failed'"
+            cd "$app_dir"
 
-      - name: Create snapshot
-        working-directory: semaphore
-        run: make snapshot
+            echo "Checking $app_name service status..."
+            ansible -i inventory/hosts.yml jail_hosts -m shell \
+              -a "jexec $jail_name service $service_name status" || echo "Service check failed"
 
-      - name: Create backup
-        working-directory: semaphore
-        run: make backup
+            echo ""
+            echo "Checking if $app_name port $port is listening..."
+            ansible -i inventory/hosts.yml jail_hosts -m shell \
+              -a "jexec $jail_name sockstat -l | grep $port" || echo "Port check failed"
+
+            echo ""
+            echo "Testing $app_name API health endpoint..."
+            ansible -i inventory/hosts.yml jail_hosts -m shell \
+              -a "jexec $jail_name curl -f -s http://localhost:$port$health_endpoint || echo 'API endpoint check failed'"
+
+            cd ..
+            echo ""
+          done
+
+      # =========================================================================
+      # PHASE 4: Operational Testing (Backup/Restore/Disaster Recovery)
+      # =========================================================================
+      - name: Create snapshots
+        run: |
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "Creating snapshot for $app_dir..."
+            cd "$app_dir"
+            make snapshot
+            cd ..
+          done
+
+      - name: Create backups
+        run: |
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "Creating backup for $app_dir..."
+            cd "$app_dir"
+            make backup
+            cd ..
+          done
 
       - name: List backups
-        working-directory: semaphore
         run: |
-          ansible -i inventory/hosts.yml jail_hosts -m shell -a "ls -lh /var/backups/semaphore/"
+          echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while read app; do
+            app_name=$(echo "$app" | jq -r '.name')
+            app_dir=$(echo "$app" | jq -r '.working_dir')
+            backup_location=$(echo "$app" | jq -r '.backup_location')
 
-      - name: Restore from backup
-        working-directory: semaphore
+            echo "Backups for $app_name:"
+            cd "$app_dir"
+            ansible -i inventory/hosts.yml jail_hosts -m shell -a "ls -lh $backup_location/" || echo "No backups found"
+            cd ..
+            echo ""
+          done
+
+      - name: Restore from backups
         run: |
-          # Get the most recent backup timestamp (backups are directories)
-          BACKUP_TS=$(ansible -i inventory/hosts.yml jail_hosts -m shell \
-            -a "ls -1d /var/backups/semaphore/2* | tail -1 | xargs basename" \
-            | grep -v "jail_hosts" | grep -E '^[0-9]{8}T[0-9]{6}$')
+          echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while read app; do
+            app_name=$(echo "$app" | jq -r '.name')
+            app_dir=$(echo "$app" | jq -r '.working_dir')
+            backup_location=$(echo "$app" | jq -r '.backup_location')
 
-          echo "Restoring from backup: $BACKUP_TS"
-          ansible-playbook -i inventory/hosts.yml playbooks/restore.yml \
-            -e backup_timestamp=$BACKUP_TS \
-            -e confirm_restore=yes
+            echo "Restoring $app_name from backup..."
+            cd "$app_dir"
 
+            # Get the most recent backup timestamp (backups are directories)
+            BACKUP_TS=$(ansible -i inventory/hosts.yml jail_hosts -m shell \
+              -a "ls -1d $backup_location/2* | tail -1 | xargs basename" \
+              | grep -v "jail_hosts" | grep -E '^[0-9]{8}T[0-9]{6}$')
+
+            echo "Restoring $app_name from backup: $BACKUP_TS"
+            ansible-playbook -i inventory/hosts.yml playbooks/restore.yml \
+              -e backup_timestamp=$BACKUP_TS \
+              -e confirm_restore=yes
+
+            cd ..
+          done
+
+      # =========================================================================
+      # PHASE 5: Cleanup
+      # =========================================================================
       - name: Destroy all (cleanup)
         if: ${{ !inputs.skip_destroy }}
-        working-directory: semaphore
         run: |
+          # Use first app's playbook to destroy all infrastructure
+          first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
+          echo "Running destroy-all from $first_app_dir..."
+          cd "$first_app_dir"
           ansible-playbook -i inventory/hosts.yml \
             playbooks/destroy-all.yml \
             -e confirm_destroy_all=destroy-everything
 
       - name: Verify cleanup
         if: ${{ !inputs.skip_destroy }}
-        working-directory: semaphore
         run: |
+          first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
+          cd "$first_app_dir"
+
           echo "Verifying jails are destroyed..."
           ansible -i inventory/hosts.yml jail_hosts -m shell \
-            -a "jls | grep semaphore || echo 'No jails found (expected)'"
+            -a "jls || echo 'No jails found (expected)'"
 
           echo "Verifying rc.conf.d cleanup..."
           ansible -i inventory/hosts.yml jail_hosts -m shell \
-            -a "grep -E 'jail_(semaphore-app|semaphore-db)_enable' /etc/rc.conf.d/jail-forge || echo 'No jail entries found (expected)'"
+            -a "grep -E 'jail_.*_enable' /etc/rc.conf.d/jail-forge 2>/dev/null || echo 'No jail entries found (expected)'"
 
       - name: Test summary
         if: always()
         run: |
+          num_apps=$(echo '${{ env.APPS_JSON }}' | jq '. | length')
+          app_names=$(echo '${{ env.APPS_JSON }}' | jq -r '.[].name' | paste -sd ',' -)
+
           echo "════════════════════════════════════════"
           echo "Test Lifecycle Complete"
           echo "════════════════════════════════════════"
+          echo ""
+          echo "Applications tested: $num_apps ($app_names)"
           echo ""
           echo "Tests performed:"
           echo "  ✓ Syntax validation"
