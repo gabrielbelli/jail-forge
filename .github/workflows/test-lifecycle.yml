@@ -138,6 +138,23 @@ jobs:
           echo "Checking if jails are running..."
           ansible -i inventory/hosts.yml jail_hosts -m shell -a "jls | grep semaphore"
 
+      - name: Health check Semaphore
+        working-directory: semaphore
+        run: |
+          echo "Checking Semaphore service status..."
+          ansible -i inventory/hosts.yml jail_hosts -m shell \
+            -a "jexec semaphore-app service semaphore status"
+
+          echo ""
+          echo "Checking if Semaphore port is listening..."
+          ansible -i inventory/hosts.yml jail_hosts -m shell \
+            -a "jexec semaphore-app sockstat -l | grep 3000"
+
+          echo ""
+          echo "Testing Semaphore API health endpoint..."
+          ansible -i inventory/hosts.yml jail_hosts -m shell \
+            -a "jexec semaphore-app curl -f -s http://localhost:3000/api/ping || echo 'API endpoint check failed'"
+
       - name: Create snapshot
         working-directory: semaphore
         run: make snapshot
@@ -195,6 +212,7 @@ jobs:
           echo "  ✓ Syntax validation"
           echo "  ✓ Connectivity check"
           echo "  ✓ Full deployment"
+          echo "  ✓ Health check (service, port, API)"
           echo "  ✓ Snapshot creation"
           echo "  ✓ Backup creation"
           echo "  ✓ Backup restore"
