@@ -113,16 +113,19 @@ Every deployment includes:
 - ✅ Disaster recovery (full rebuild + restore)
 - ✅ Clean destroy operations
 
-## Creating New Deployments
+## Adding New Applications
 
-Want to add a new application? See the comprehensive [TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md) which documents all the patterns and best practices established in this project.
+Want to add a new application to jail-forge? See [INTEGRATION.md](./INTEGRATION.md) for a comprehensive step-by-step guide.
 
-The template guide covers:
-- Project structure and organization
-- Key design patterns (jexec for service management, nullfs cleanup, etc.)
-- Complete playbook examples
-- Common pitfalls and solutions
-- Testing and validation procedures
+The integration guide covers:
+- Prerequisites and planning checklist
+- 12-step integration process
+- Playbook customization patterns
+- Complete worked example (Nextcloud)
+- GitHub Actions integration
+- Testing and troubleshooting
+
+For historical context and additional patterns, see [TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md).
 
 ## Shared Resources
 
@@ -183,12 +186,20 @@ Each application directory contains a `TESTING-STATUS.md` documenting test resul
 
 ## Documentation
 
-Each application has its own detailed documentation:
-- `<app>/README.md` - Quick start and overview
+### Getting Started
+1. **[README.md](./README.md)** (this file) - Project overview and quick start
+2. **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System design, philosophy, and technical concepts
+3. **[INTEGRATION.md](./INTEGRATION.md)** - Step-by-step guide for adding new applications
+
+### Application-Specific
+- `<app>/README.md` - Application quick start and overview
 - `<app>/docs/` - Detailed documentation for that application
 
-Root-level documentation:
-- [TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md) - Creating new deployments
+### CI/CD
+- [.github/TESTING.md](.github/TESTING.md) - GitHub Actions workflow setup and usage
+
+### Reference
+- [TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md) - Original deployment guide
 - [LICENSE](./LICENSE) - BSD 2-Clause License
 
 ## License
