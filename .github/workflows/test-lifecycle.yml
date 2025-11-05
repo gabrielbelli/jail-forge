@@ -149,14 +149,14 @@ jobs:
       - name: List backups
         working-directory: semaphore
         run: |
-          ansible -i inventory/hosts.yml jail_hosts -m shell -a "ls -lh /zroot/jails/data/backups/"
+          ansible -i inventory/hosts.yml jail_hosts -m shell -a "ls -lh /var/backups/semaphore/"
 
       - name: Restore from backup
         working-directory: semaphore
         run: |
           # Get the most recent backup timestamp
           BACKUP_TS=$(ansible -i inventory/hosts.yml jail_hosts -m shell \
-            -a "ls -1 /zroot/jails/data/backups/*.tar.gz | tail -1 | sed 's/.*semaphore-backup-\(.*\)\.tar\.gz/\1/'" \
+            -a "ls -1 /var/backups/semaphore/*.tar.gz | tail -1 | sed 's/.*semaphore-backup-\(.*\)\.tar\.gz/\1/'" \
             | grep -v "jail_hosts" | grep -E '^[0-9]{8}T[0-9]{6}$')
 
           echo "Restoring from backup: $BACKUP_TS"
@@ -181,13 +181,6 @@ jobs:
           echo "Verifying rc.conf.d cleanup..."
           ansible -i inventory/hosts.yml jail_hosts -m shell \
             -a "grep -E 'jail_(semaphore-app|semaphore-db)_enable' /etc/rc.conf.d/jail-forge || echo 'No jail entries found (expected)'"
-
-      - name: Cleanup sensitive files
-        if: always()
-        run: |
-          rm -f ~/.ssh/belli
-          rm -f semaphore/group_vars/all/secrets.yml
-          rm -f semaphore/inventory/hosts.yml
 
       - name: Test summary
         if: always()
