@@ -160,7 +160,9 @@ jobs:
             | grep -v "jail_hosts" | grep -E '^[0-9]{8}T[0-9]{6}$')
 
           echo "Restoring from backup: $BACKUP_TS"
-          make restore BACKUP_TIMESTAMP=$BACKUP_TS
+          ansible-playbook -i inventory/hosts.yml playbooks/restore.yml \
+            -e backup_timestamp=$BACKUP_TS \
+            -e confirm_restore=yes
 
       - name: Destroy all (cleanup)
         if: ${{ !inputs.skip_destroy }}
