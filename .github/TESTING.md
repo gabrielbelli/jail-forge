@@ -106,15 +106,28 @@ After adding all secrets, verify you have all 8 (values will be hidden):
 
 ### What Gets Tested
 
-The workflow performs a complete lifecycle test:
+The workflow performs a complete lifecycle test across **all configured applications**:
 
+#### Phase 1: Environment Setup
+- Installs Python, Ansible, and system dependencies
+- Generates SSH keys and inventory files
+- Creates secrets.yml from templates
+
+#### Phase 2: Pre-flight Validation
 1. ✓ **Syntax Check**: Validates all playbook syntax
 2. ✓ **Connectivity**: Tests connection to BSD host
-3. ✓ **Deploy**: Full deployment (prepare-host → deploy-db → deploy-app)
-4. ✓ **Snapshot**: Creates ZFS snapshots
-5. ✓ **Backup**: Creates backup archive
-6. ✓ **Restore**: Restores from the backup
-7. ✓ **Cleanup**: Destroys all (unless skip_destroy is checked)
+
+#### Phase 3: Application Deployment
+3. ✓ **Deploy**: Full deployment for all apps (prepare-host → deploy-db → deploy-app)
+4. ✓ **Health Check**: Service status, port listening, and API endpoint tests
+
+#### Phase 4: Operational Testing
+5. ✓ **Snapshot**: Creates ZFS snapshots
+6. ✓ **Backup**: Creates backup archives
+7. ✓ **Restore**: Restores from backups
+
+#### Phase 5: Cleanup
+8. ✓ **Cleanup**: Destroys all infrastructure (unless skip_destroy is checked)
 
 ### Monitoring Test Progress
 
@@ -163,6 +176,71 @@ Expected runtime: ~5-10 minutes depending on your host performance
 - This is expected if you checked "Skip destroy"
 - Otherwise, check BSD host manually: `jls`
 - May need manual cleanup: `make destroy-all`
+
+## Multi-Application Architecture
+
+The workflow is **app-agnostic** and supports testing multiple applications simultaneously.
+
+### Application Configuration
+
+Applications are defined in the `APPS_JSON` environment variable in `.github/workflows/test-lifecycle.yml` (lines 22-33):
+
+```yaml
+env:
+  APPS_JSON: |
+    [
+      {
+        "name": "semaphore",
+        "working_dir": "semaphore",
+        "jail_name": "semaphore-app",
+        "port": 3000,
+        "health_endpoint": "/api/ping",
+        "service_name": "semaphore",
+        "backup_location": "/var/backups/semaphore"
+      }
+    ]
+```
+
+### Adding New Applications
+
+To add additional applications (e.g., Nextcloud, Jellyfin), simply add new entries to the JSON array:
+
+```yaml
+env:
+  APPS_JSON: |
+    [
+      {
+        "name": "semaphore",
+        "working_dir": "semaphore",
+        "jail_name": "semaphore-app",
+        "port": 3000,
+        "health_endpoint": "/api/ping",
+        "service_name": "semaphore",
+        "backup_location": "/var/backups/semaphore"
+      },
+      {
+        "name": "nextcloud",
+        "working_dir": "nextcloud",
+        "jail_name": "nextcloud-app",
+        "port": 80,
+        "health_endpoint": "/status.php",
+        "service_name": "nginx",
+        "backup_location": "/var/backups/nextcloud"
+      }
+    ]
+```
+
+### Configuration Fields
+
+- **name**: Display name for the application
+- **working_dir**: Directory containing the Ansible playbooks
+- **jail_name**: Name of the application jail (for health checks)
+- **port**: Primary service port to check
+- **health_endpoint**: API endpoint to test (relative path)
+- **service_name**: Service name in jail (for `service <name> status`)
+- **backup_location**: Path to backup directory on BSD host
+
+All workflow steps automatically iterate over the configured applications. No code changes needed!
 
 ## Future Enhancements
 
