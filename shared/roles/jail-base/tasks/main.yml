@@ -85,17 +85,40 @@
     dest: "/usr/local/etc/jail.conf.d/{{ jail_name }}.conf"
     mode: '0644'
 
+- name: Rebuild /etc/jail.conf from individual configs
+  shell: |
+    echo "# Main jail.conf configuration" > /etc/jail.conf
+    echo "# Managed by Ansible - DO NOT EDIT MANUALLY" >> /etc/jail.conf
+    echo "# Individual jail configurations are in /usr/local/etc/jail.conf.d/" >> /etc/jail.conf
+    echo "# This file is rebuilt automatically from those configs" >> /etc/jail.conf
+    echo "" >> /etc/jail.conf
+    cat /usr/local/etc/jail.conf.d/*.conf >> /etc/jail.conf 2>/dev/null || true
+  changed_when: true
+
 - name: Start jail
-  command: jail -f /usr/local/etc/jail.conf.d/{{ jail_name }}.conf -c {{ jail_name }}
+  command: jail -f /etc/jail.conf -c {{ jail_name }}
   when: jail_check.rc != 0
   register: jail_start
   failed_when: false
 
+- name: Check if jail started successfully
+  command: jls -j {{ jail_name }}
+  register: jail_verify
+  failed_when: jail_verify.rc != 0
+  changed_when: false
+  when: jail_check.rc != 0
+
+- name: Cleanup failed mounts if jail failed to start
+  shell: |
+    mount | grep "{{ jail_path }}" | awk '{print $3}' | xargs -n1 umount -f 2>/dev/null || true
+  when: jail_check.rc != 0 and jail_verify.rc != 0
+  ignore_errors: yes
+
 - name: Wait for jail to be fully started
   wait_for:
-    timeout: 10
+    timeout: 5
   delegate_to: localhost
-  when: jail_check.rc != 0
+  when: jail_check.rc != 0 and jail_verify.rc == 0
 
 - name: Update jail to latest patches
   command: >
@@ -125,13 +148,12 @@
     dest: "{{ jail_path }}/etc/rc.conf"
     mode: '0644'
 
-- name: Ensure jail is set to autostart
-  lineinfile:
-    path: /etc/rc.conf.d/jail-forge
-    regexp: '^jail_{{ jail_name }}_enable='
-    line: 'jail_{{ jail_name }}_enable="YES"'
-    create: yes
+- name: Add jail to autostart list
+  command: sysrc -f /etc/rc.conf.d/jail jail_list+="{{ jail_name }}"
   when: jail_autostart
+  register: sysrc_result
+  changed_when: "'jail_list:' in sysrc_result.stdout"
+  failed_when: false
 
 - name: Display jail information
   debug:

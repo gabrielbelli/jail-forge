@@ -68,13 +68,12 @@
         state: directory
         mode: '0755'
 
-    - name: Enable jail service in rc.conf.d
-      copy:
-        dest: /etc/rc.conf.d/jail-forge
-        content: |
-          # jail-forge managed configuration
-          jail_enable="YES"
-        mode: '0644'
+    - name: Enable jail service
+      command: sysrc -f /etc/rc.conf.d/jail jail_enable="YES"
+
+    - name: Initialize jail_list if not set
+      shell: sysrc -f /etc/rc.conf.d/jail -n jail_list >/dev/null 2>&1 || sysrc -f /etc/rc.conf.d/jail jail_list=""
+      changed_when: false
 
     - name: Configure jail.conf
       template:
@@ -82,12 +81,26 @@
         dest: /etc/jail.conf
         mode: '0644'
 
-    - name: Ensure pf is configured for jail networking
-      blockinfile:
-        path: /etc/pf.conf
-        create: yes
-        marker: "# {mark} ANSIBLE MANAGED - Semaphore"
-        block: |
+    - name: Create base pf.conf with essential rules
+      copy:
+        dest: /etc/pf.conf
+        content: |
+          # PF Configuration for Semaphore on BSD Jails
+          # Managed by Ansible
+
+          # Skip filtering on loopback
+          set skip on lo0
+
+          # Allow all outbound traffic
+          pass out quick on {{ jail_interface }} all
+
+          # Allow established connections
+          pass in quick on {{ jail_interface }} proto tcp flags S/SA keep state
+
+          # Allow SSH access (essential - do not remove!)
+          pass in on {{ jail_interface }} proto tcp to port 22
+
+          # BEGIN ANSIBLE MANAGED - Semaphore
           # Filtering rules for Semaphore jails (IP alias mode - no NAT needed)
           # Allow Semaphore web access
           pass in on {{ jail_interface }} proto tcp to {{ jail_ip_semaphore }} port {{ semaphore_port }}
@@ -97,17 +110,21 @@
 
           # Allow jails outbound access
           pass out on {{ jail_interface }} from { {{ jail_ip_database }}, {{ jail_ip_semaphore }} }
+          # END ANSIBLE MANAGED - Semaphore
+        mode: '0644'
       notify: reload pf
 
     - name: Enable pf in rc.conf.d
-      lineinfile:
-        path: /etc/rc.conf.d/jail-forge
-        regexp: '^pf_enable='
-        line: 'pf_enable="YES"'
-        create: yes
+      command: sysrc -f /etc/rc.conf.d/jail pf_enable="YES"
+
+    - name: Load pf kernel module if needed
+      command: kldload pf
+      register: kldload_pf
+      failed_when: false
+      changed_when: kldload_pf.rc == 0
 
     - name: Start pf if not running
-      shell: pfctl -e || true
+      shell: pfctl -e 2>/dev/null || true
       changed_when: false
 
   handlers:

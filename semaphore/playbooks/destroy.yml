@@ -42,15 +42,28 @@
       pause:
         seconds: 3
 
-    - name: Stop Semaphore jail
-      command: jail -r semaphore-app
-      ignore_errors: yes
-
-    - name: Stop database jail
-      command: jail -r semaphore-db
+    - name: Stop jails using service
+      command: service jail stop
       ignore_errors: yes
 
     - name: Wait for jails to stop
+      pause:
+        seconds: 3
+
+    - name: Check if jails are still running
+      shell: jls -j semaphore-app || jls -j semaphore-db
+      register: jail_still_running
+      failed_when: false
+      changed_when: false
+
+    - name: Force stop jails if still running
+      shell: |
+        jail -r semaphore-app 2>/dev/null || true
+        jail -r semaphore-db 2>/dev/null || true
+      when: jail_still_running.rc == 0
+      ignore_errors: yes
+
+    - name: Wait for mounts to be released
       pause:
         seconds: 2
 
@@ -66,9 +79,15 @@
 
     - name: Force unmount any remaining nullfs mounts
       shell: |
-        mount -t nullfs | grep "semaphore-app" | awk '{print $3}' | xargs -r -n1 umount -f || true
-        mount -t nullfs | grep "semaphore-db" | awk '{print $3}' | xargs -r -n1 umount -f || true
+        mount -t nullfs | grep "semaphore-app" | awk '{print $3}' | xargs -n1 umount -f 2>/dev/null || true
+        mount -t nullfs | grep "semaphore-db" | awk '{print $3}' | xargs -n1 umount -f 2>/dev/null || true
       when: remaining_mounts.stdout != ""
+      ignore_errors: yes
+
+    - name: Force unmount devfs mounts
+      shell: |
+        mount | grep "semaphore-app/dev" | awk '{print $3}' | xargs -n1 umount -f 2>/dev/null || true
+        mount | grep "semaphore-db/dev" | awk '{print $3}' | xargs -n1 umount -f 2>/dev/null || true
       ignore_errors: yes
 
     - name: Remove jail configurations
@@ -81,15 +100,24 @@
         - /usr/local/etc/jail.fstab.d/semaphore-app.fstab
         - /usr/local/etc/jail.fstab.d/semaphore-db.fstab
 
-    - name: Remove jail autostart entries
-      lineinfile:
-        path: /etc/rc.conf.d/jail-forge
-        regexp: '^jail_{{ item }}_enable='
-        state: absent
+    - name: Remove jail from autostart list
+      command: sysrc -f /etc/rc.conf.d/jail jail_list-="{{ item }}"
       loop:
         - semaphore-app
         - semaphore-db
-      ignore_errors: yes
+      register: sysrc_result
+      changed_when: "'jail_list:' in sysrc_result.stdout"
+      failed_when: false
+
+    - name: Rebuild /etc/jail.conf from remaining configs
+      shell: |
+        echo "# Main jail.conf configuration" > /etc/jail.conf
+        echo "# Managed by Ansible - DO NOT EDIT MANUALLY" >> /etc/jail.conf
+        echo "# Individual jail configurations are in /usr/local/etc/jail.conf.d/" >> /etc/jail.conf
+        echo "# This file is rebuilt automatically from those configs" >> /etc/jail.conf
+        echo "" >> /etc/jail.conf
+        cat /usr/local/etc/jail.conf.d/*.conf >> /etc/jail.conf 2>/dev/null || true
+      changed_when: true
 
     - name: Destroy ZFS datasets (optional - commented for safety)
       debug:
