@@ -3,6 +3,7 @@
 # Fast, instant snapshots of jails for quick rollback capability
 - name: Create ZFS Snapshots
   hosts: jail_hosts
+  become: true
   gather_facts: true
   vars_files:
     - ../group_vars/all/vars.yml

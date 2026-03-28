@@ -2,6 +2,7 @@
 # Update Semaphore to a new version
 - name: Update Semaphore Application
   hosts: jail_hosts
+  become: true
   gather_facts: true
   vars_files:
     - ../group_vars/all/vars.yml
@@ -61,4 +62,6 @@
 
     - name: Display update result
       debug:
-        msg: "✓ Semaphore updated successfully to {{ semaphore_new_version | default('latest') }}"
+        msg:
+          - "✓ Semaphore updated successfully to {{ semaphore_new_version | default('latest') }}"
+          - "   URL: https://{{ ansible_host if (jail_network_mode | default('alias')) == 'nat' else jail_ip_semaphore }}:{{ semaphore_port }}"

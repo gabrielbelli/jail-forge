@@ -118,6 +118,7 @@
   wait_for:
     timeout: 5
   delegate_to: localhost
+  become: false
   when: jail_check.rc != 0 and jail_verify.rc == 0
 
 - name: Update jail to latest patches

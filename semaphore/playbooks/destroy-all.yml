@@ -5,6 +5,7 @@
 # Step 1: Get confirmation for complete destruction
 - name: Confirm Complete Destruction
   hosts: jail_hosts
+  become: true
   gather_facts: true
   vars_files:
     - ../group_vars/all/vars.yml
@@ -46,6 +47,7 @@
 # Step 3: Destroy ZFS datasets (the "all" part)
 - name: Destroy ZFS Datasets
   hosts: jail_hosts
+  become: true
   gather_facts: false
   vars_files:
     - ../group_vars/all/vars.yml

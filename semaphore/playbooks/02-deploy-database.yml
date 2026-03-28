@@ -2,6 +2,7 @@
 # Deploy PostgreSQL database jail
 - name: Deploy PostgreSQL Database Jail
   hosts: jail_hosts
+  become: true
   gather_facts: true
   vars_files:
     - ../group_vars/all/secrets.yml
@@ -19,6 +20,7 @@
 
 - name: Configure PostgreSQL in jail
   hosts: jail_hosts
+  become: true
   gather_facts: false
   vars_files:
     - ../group_vars/all/secrets.yml

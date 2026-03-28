@@ -1,6 +1,7 @@
 ---
 - name: Test Variable Loading
   hosts: jail_hosts
+  become: true
   gather_facts: false
   tasks:
     - name: Debug all variables

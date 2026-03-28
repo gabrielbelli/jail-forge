@@ -2,6 +2,7 @@
 # Prepare BSD host for jail deployment
 - name: Prepare BSD Host for Jails
   hosts: jail_hosts
+  become: true
   gather_facts: true
   vars_files:
     - ../group_vars/all/secrets.yml
@@ -81,36 +82,42 @@
         dest: /etc/jail.conf
         mode: '0644'
 
-    - name: Create base pf.conf with essential rules
-      copy:
+    # NAT mode: create loopback interface and enable IP forwarding
+    - name: Create cloned loopback interface for jail NAT
+      command: sysrc cloned_interfaces+="{{ jail_nat_interface }}"
+      when: jail_network_mode | default('alias') == 'nat'
+
+    - name: Configure jail IPs on loopback interface
+      command: >
+        sysrc ifconfig_{{ jail_nat_interface }}_alias{{ idx }}="inet {{ item }} netmask 255.255.255.255"
+      loop:
+        - "{{ jail_ip_database }}"
+        - "{{ jail_ip_semaphore }}"
+      loop_control:
+        index_var: idx
+      when: jail_network_mode | default('alias') == 'nat'
+
+    - name: Bring up loopback interface
+      shell: |
+        ifconfig {{ jail_nat_interface }} create 2>/dev/null || true
+        ifconfig {{ jail_nat_interface }} inet {{ jail_ip_database }} netmask 255.255.255.255 alias
+        ifconfig {{ jail_nat_interface }} inet {{ jail_ip_semaphore }} netmask 255.255.255.255 alias
+      when: jail_network_mode | default('alias') == 'nat'
+      changed_when: false
+
+    - name: Enable IP forwarding for NAT
+      command: sysrc gateway_enable="YES"
+      when: jail_network_mode | default('alias') == 'nat'
+
+    - name: Activate IP forwarding immediately
+      command: sysctl net.inet.ip.forwarding=1
+      when: jail_network_mode | default('alias') == 'nat'
+      changed_when: false
+
+    - name: Create pf.conf from template
+      template:
+        src: ../roles/jail-base/templates/pf.conf.j2
         dest: /etc/pf.conf
-        content: |
-          # PF Configuration for Semaphore on BSD Jails
-          # Managed by Ansible
-
-          # Skip filtering on loopback
-          set skip on lo0
-
-          # Allow all outbound traffic
-          pass out quick on {{ jail_interface }} all
-
-          # Allow established connections
-          pass in quick on {{ jail_interface }} proto tcp flags S/SA keep state
-
-          # Allow SSH access (essential - do not remove!)
-          pass in on {{ jail_interface }} proto tcp to port 22
-
-          # BEGIN ANSIBLE MANAGED - Semaphore
-          # Filtering rules for Semaphore jails (IP alias mode - no NAT needed)
-          # Allow Semaphore web access
-          pass in on {{ jail_interface }} proto tcp to {{ jail_ip_semaphore }} port {{ semaphore_port }}
-
-          # Allow PostgreSQL access from Semaphore jail
-          pass in on {{ jail_interface }} proto tcp from {{ jail_ip_semaphore }} to {{ jail_ip_database }} port 5432
-
-          # Allow jails outbound access
-          pass out on {{ jail_interface }} from { {{ jail_ip_database }}, {{ jail_ip_semaphore }} }
-          # END ANSIBLE MANAGED - Semaphore
         mode: '0644'
       notify: reload pf
 

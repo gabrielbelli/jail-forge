@@ -3,6 +3,7 @@
 # This assumes infrastructure is already deployed via IaC
 - name: Restore Semaphore Data from Backup
   hosts: jail_hosts
+  become: true
   gather_facts: true
   vars_files:
     - ../group_vars/all/vars.yml

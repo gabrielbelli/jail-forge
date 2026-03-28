@@ -72,6 +72,7 @@
 
 - name: "Phase 2/2: Restore Data from Backup"
   hosts: jail_hosts
+  become: true
   gather_facts: true
   vars_files:
     - ../group_vars/all/vars.yml

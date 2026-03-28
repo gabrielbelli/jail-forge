@@ -2,6 +2,7 @@
 # Verify deployment is successful
 - name: Verify Semaphore Deployment
   hosts: jail_hosts
+  become: true
   gather_facts: false
   vars_files:
     - ../group_vars/all/secrets.yml
@@ -60,7 +61,7 @@
           - "✓ Deployment successful!"
           - ""
           - "🔒 HTTPS Access:"
-          - "   URL: https://{{ jail_ip_semaphore }}:{{ semaphore_port }}"
+          - "   URL: https://{{ ansible_host if (jail_network_mode | default('alias')) == 'nat' else jail_ip_semaphore }}:{{ semaphore_port }}"
           - "   Certificate: {{ 'Self-signed' if tls_cert_strategy == 'generate' else 'Existing' }} ({{ tls_cert_lifetime_days if tls_cert_strategy == 'generate' else 'N/A' }} days validity)"
           - "   {{ cert_details.stdout_lines }}"
           - ""
@@ -68,8 +69,9 @@
           - "   This is normal - click 'Advanced' and 'Proceed' to access"
           - ""
           - "📊 Infrastructure:"
+          - "   Network Mode: {{ jail_network_mode | default('alias') }}"
           - "   Database:  {{ jail_ip_database }}"
-          - "   Semaphore: {{ jail_ip_semaphore }}:{{ semaphore_port }} (HTTPS)"
+          - "   Semaphore: {{ ansible_host if (jail_network_mode | default('alias')) == 'nat' else jail_ip_semaphore }}:{{ semaphore_port }} (HTTPS)"
           - ""
           - "🔑 Default Credentials:"
           - "   Username: {{ semaphore_admin_user }}"

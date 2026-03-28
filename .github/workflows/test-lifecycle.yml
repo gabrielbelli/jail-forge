@@ -37,28 +37,32 @@ jobs:
       # PHASE 1: Environment Setup
       # =========================================================================
       - name: Checkout repository
-        uses: actions/checkout@v4
+        run: |
+          if [ -d ".git" ]; then
+            git fetch origin "${{ github.ref }}" --depth=1
+            git checkout FETCH_HEAD
+          else
+            git clone --depth=1 --branch "${GITHUB_REF_NAME}" "https://github.com/${{ github.repository }}.git" .
+          fi
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: '*/requirements.txt'
-
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y make jq
+      - name: Verify system dependencies
+        run: |
+          for cmd in make jq python3 ssh git; do
+            command -v "$cmd" >/dev/null 2>&1 || { echo "Missing: $cmd — update runner-install.sh"; exit 1; }
+          done
 
       - name: Install Ansible and dependencies
         run: |
-          python -m pip install --upgrade pip
-          # Install dependencies for all apps
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip install --upgrade pip
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             if [ -f "$app_dir/requirements.txt" ]; then
               echo "Installing requirements for $app_dir..."
               pip install -r "$app_dir/requirements.txt"
             fi
           done
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Set up SSH key
         run: |
@@ -128,6 +132,11 @@ jobs:
             sed -e "s|{{DB_PASSWORD}}|${{ secrets.DB_PASSWORD }}|g" \
                 -e "s|{{SEMAPHORE_ADMIN_PASSWORD}}|${{ secrets.SEMAPHORE_ADMIN_PASSWORD }}|g" \
                 -e "s|{{SEMAPHORE_ACCESS_KEY_ENCRYPTION}}|${{ secrets.SEMAPHORE_ACCESS_KEY_ENCRYPTION }}|g" \
+                -e "s|{{JAIL_IP_DATABASE}}|${{ secrets.JAIL_IP_DATABASE }}|g" \
+                -e "s|{{JAIL_IP_SEMAPHORE}}|${{ secrets.JAIL_IP_SEMAPHORE }}|g" \
+                -e "s|{{JAIL_NETWORK_CIDR}}|${{ secrets.JAIL_NETWORK_CIDR }}|g" \
+                -e "s|{{JAIL_GATEWAY}}|${{ secrets.JAIL_GATEWAY }}|g" \
+                -e "s|{{JAIL_INTERFACE}}|${{ secrets.JAIL_INTERFACE }}|g" \
                 "$app_dir/group_vars/all/secrets.yml.template" > "$app_dir/group_vars/all/secrets.yml"
             chmod 600 "$app_dir/group_vars/all/secrets.yml"
           done
@@ -188,7 +197,7 @@ jobs:
           first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
           echo "Checking if jails are running..."
           cd "$first_app_dir"
-          ansible -i inventory/hosts.yml jail_hosts -m shell -a "jls"
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell -a "jls"
 
       - name: Health check all applications
         run: |
@@ -207,17 +216,17 @@ jobs:
             cd "$app_dir"
 
             echo "Checking $app_name service status..."
-            ansible -i inventory/hosts.yml jail_hosts -m shell \
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
               -a "jexec $jail_name service $service_name status" || echo "Service check failed"
 
             echo ""
             echo "Checking if $app_name port $port is listening..."
-            ansible -i inventory/hosts.yml jail_hosts -m shell \
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
               -a "jexec $jail_name sockstat -l | grep $port" || echo "Port check failed"
 
             echo ""
             echo "Testing $app_name API health endpoint..."
-            ansible -i inventory/hosts.yml jail_hosts -m shell \
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
               -a "jexec $jail_name curl -f -s http://localhost:$port$health_endpoint || echo 'API endpoint check failed'"
 
             cd ..
@@ -254,7 +263,7 @@ jobs:
 
             echo "Backups for $app_name:"
             cd "$app_dir"
-            ansible -i inventory/hosts.yml jail_hosts -m shell -a "ls -lh $backup_location/" || echo "No backups found"
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell -a "ls -lh $backup_location/" || echo "No backups found"
             cd ..
             echo ""
           done
@@ -270,7 +279,7 @@ jobs:
             cd "$app_dir"
 
             # Get the most recent backup timestamp (backups are directories)
-            BACKUP_TS=$(ansible -i inventory/hosts.yml jail_hosts -m shell \
+            BACKUP_TS=$(ansible -b -i inventory/hosts.yml jail_hosts -m shell \
               -a "ls -1d $backup_location/2* | tail -1 | xargs basename" \
               | grep -v "jail_hosts" | grep -E '^[0-9]{8}T[0-9]{6}$')
 
@@ -303,11 +312,11 @@ jobs:
           cd "$first_app_dir"
 
           echo "Verifying jails are destroyed..."
-          ansible -i inventory/hosts.yml jail_hosts -m shell \
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
             -a "jls || echo 'No jails found (expected)'"
 
           echo "Verifying rc.conf.d cleanup..."
-          ansible -i inventory/hosts.yml jail_hosts -m shell \
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
             -a "grep -E 'jail_.*_enable' /etc/rc.conf.d/jail-forge 2>/dev/null || echo 'No jail entries found (expected)'"
 
       - name: Test summary

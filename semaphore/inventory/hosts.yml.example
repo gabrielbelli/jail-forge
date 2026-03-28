@@ -9,7 +9,7 @@ all:
       hosts:
         bsd-host:
           ansible_host: your-bsd-host.example.com  # Your BSD host IP or hostname
-          ansible_user: root
+          ansible_user: ansible  # User with passwordless sudo
           ansible_python_interpreter: /usr/local/bin/python3.11
           ansible_ssh_private_key_file: ~/.ssh/id_rsa  # Path to your SSH private key
 

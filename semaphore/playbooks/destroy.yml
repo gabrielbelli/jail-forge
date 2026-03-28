@@ -2,6 +2,7 @@
 # Destroy all jails and clean up
 - name: Destroy Semaphore Infrastructure
   hosts: jail_hosts
+  become: true
   gather_facts: true
   vars_files:
     - ../group_vars/all/vars.yml
@@ -99,6 +100,33 @@
         - /usr/local/etc/jail.conf.d/semaphore-db.conf
         - /usr/local/etc/jail.fstab.d/semaphore-app.fstab
         - /usr/local/etc/jail.fstab.d/semaphore-db.fstab
+
+    - name: Remove jail IPs from loopback interface (NAT mode)
+      shell: |
+        ifconfig {{ jail_nat_interface }} inet {{ jail_ip_database }} -alias 2>/dev/null || true
+        ifconfig {{ jail_nat_interface }} inet {{ jail_ip_semaphore }} -alias 2>/dev/null || true
+      when: jail_network_mode | default('alias') == 'nat'
+      ignore_errors: yes
+
+    - name: Remove loopback interface configuration (NAT mode)
+      shell: |
+        sysrc -x ifconfig_{{ jail_nat_interface }}_alias0 2>/dev/null || true
+        sysrc -x ifconfig_{{ jail_nat_interface }}_alias1 2>/dev/null || true
+        sysrc cloned_interfaces-="{{ jail_nat_interface }}" 2>/dev/null || true
+      when: jail_network_mode | default('alias') == 'nat'
+      ignore_errors: yes
+
+    - name: Destroy loopback interface (NAT mode)
+      command: ifconfig {{ jail_nat_interface }} destroy
+      when: jail_network_mode | default('alias') == 'nat'
+      ignore_errors: yes
+
+    - name: Disable IP forwarding (NAT mode)
+      shell: |
+        sysrc -x gateway_enable 2>/dev/null || true
+        sysctl net.inet.ip.forwarding=0
+      when: jail_network_mode | default('alias') == 'nat'
+      ignore_errors: yes
 
     - name: Remove jail from autostart list
       command: sysrc -f /etc/rc.conf.d/jail jail_list-="{{ item }}"

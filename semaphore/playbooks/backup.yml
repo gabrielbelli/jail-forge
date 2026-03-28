@@ -2,6 +2,7 @@
 # Backup Semaphore Data (IaC approach - data only, not infrastructure)
 - name: Backup Semaphore Data
   hosts: jail_hosts
+  become: true
   gather_facts: false
   vars_files:
     - ../group_vars/all/vars.yml

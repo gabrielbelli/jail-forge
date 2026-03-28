@@ -4,6 +4,7 @@
 
 - name: Deploy Ansible Semaphore Infrastructure on BSD Jails
   hosts: jail_hosts
+  become: true
   gather_facts: true
   tags: [always]
 
@@ -35,7 +36,7 @@
           - "Deploying Ansible Semaphore to {{ inventory_hostname }}"
           - "FreeBSD Version: {{ freebsd_version }}"
           - "ZFS Pool: {{ zfs_pool }}"
-          - "Jail Network: {{ jail_network_cidr }}"
+          - "Jail Network: {{ jail_network_cidr }} ({{ jail_network_mode | default('alias') }} mode)"
 
 # Step 1: Prepare jail host and create base jails
 - import_playbook: playbooks/01-prepare-host.yml
