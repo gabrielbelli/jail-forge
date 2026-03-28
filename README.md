@@ -27,31 +27,18 @@ Ansible automation and deployment platform with PostgreSQL backend.
 
 ```
 jail-forge/
-├── LICENSE                   # BSD 2-Clause License
 ├── README.md                 # This file
-├── TEMPLATE-GUIDE.md         # Comprehensive guide for creating new deployments
-│
-├── shared/                   # Shared resources across all applications
-│   ├── roles/
-│   │   └── jail-base/       # Base jail configuration (ZFS, networking)
-│   └── docs/
-│       ├── JAIL-NETWORKING.md   # Networking patterns
-│       ├── BACKUP-STRATEGIES.md # Backup approaches
-│       └── SECURITY.md          # Security best practices
-│
-├── semaphore/                # Ansible Semaphore deployment
+├── CONTRIBUTING.md           # How to contribute
+├── LICENSE                   # BSD 2-Clause License
+├── .github/workflows/        # CI/CD testing
+├── shared/roles/jail-base/   # Base jail role (reusable)
+├── semaphore/                # Semaphore deployment
 │   ├── README.md
-│   ├── ansible.cfg
-│   ├── site.yml
 │   ├── Makefile
-│   ├── inventory/
-│   ├── group_vars/
-│   ├── roles/
 │   ├── playbooks/
-│   ├── scripts/
-│   └── docs/
-│
-└── <future-apps>/            # More applications coming soon!
+│   ├── inventory/
+│   └── group_vars/
+└── <your-app>/               # Your application here
 ```
 
 ## Quick Start
@@ -113,34 +100,64 @@ Every deployment includes:
 - ✅ Disaster recovery (full rebuild + restore)
 - ✅ Clean destroy operations
 
-## Creating New Deployments
+## Adding New Applications
 
-Want to add a new application? See the comprehensive [TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md) which documents all the patterns and best practices established in this project.
+Adding a new application follows this pattern:
 
-The template guide covers:
-- Project structure and organization
-- Key design patterns (jexec for service management, nullfs cleanup, etc.)
-- Complete playbook examples
-- Common pitfalls and solutions
-- Testing and validation procedures
+### 1. Create Application Directory
+```bash
+mkdir -p myapp/{playbooks,inventory,group_vars/all,roles,scripts}
+```
 
-## Shared Resources
+### 2. Copy Configuration Templates
+```bash
+# From an existing app like semaphore
+cp -r semaphore/inventory/hosts.yml.example myapp/inventory/
+cp -r semaphore/group_vars/all/secrets.yml.template myapp/group_vars/all/
+cp semaphore/{ansible.cfg,Makefile} myapp/
+```
 
-### Roles
+### 3. Create Core Playbooks
 
-#### `jail-base`
-Base jail configuration used by all applications:
-- ZFS dataset creation
-- Jail configuration files
-- Network setup
-- Nullfs mounts
-- Basic jail lifecycle
+Each app needs these playbooks in `playbooks/`:
+- `prepare-host.yml` - Create ZFS datasets, install jail-forge
+- `deploy-db.yml` - Setup database jail (PostgreSQL/MySQL/etc)
+- `deploy-app.yml` - Setup application jail and software
+- `backup.yml` - Backup data directories
+- `restore.yml` - Restore from backup
+- `destroy-all.yml` - Clean teardown
 
-### Documentation
+Use semaphore as a reference implementation.
 
-- **JAIL-NETWORKING.md**: IP alias vs VNET, static vs DHCP, networking patterns
-- **BACKUP-STRATEGIES.md**: Time-based vs count-based retention, ZFS snapshots, encryption
-- **SECURITY.md**: PF configuration, TLS setup, secret management, jail hardening
+### 4. Update GitHub Actions
+
+Add your app to `.github/workflows/test-lifecycle.yml`:
+```yaml
+APPS_JSON: |
+  [
+    { "name": "semaphore", ... },
+    {
+      "name": "myapp",
+      "working_dir": "myapp",
+      "jail_name": "myapp-app",
+      "port": 8080,
+      "health_endpoint": "/health",
+      "service_name": "myapp",
+      "backup_location": "/var/backups/myapp"
+    }
+  ]
+```
+
+### 5. Test Lifecycle
+```bash
+cd myapp
+make deploy    # Deploy full stack
+make backup    # Test backup
+make restore   # Test restore
+```
+
+That's it. Keep it simple.
+
 
 ## Requirements
 
@@ -173,23 +190,7 @@ Want to contribute a deployment? Fork the repo and submit a PR!
 
 ## Testing
 
-All deployments in this repository are tested on:
-- FreeBSD 13.5-RELEASE
-- ZFS filesystem
-- Ansible 2.15+
-- Production-like scenarios (deploy, backup, restore, disaster recovery)
-
-Each application directory contains a `TESTING-STATUS.md` documenting test results.
-
-## Documentation
-
-Each application has its own detailed documentation:
-- `<app>/README.md` - Quick start and overview
-- `<app>/docs/` - Detailed documentation for that application
-
-Root-level documentation:
-- [TEMPLATE-GUIDE.md](./TEMPLATE-GUIDE.md) - Creating new deployments
-- [LICENSE](./LICENSE) - BSD 2-Clause License
+GitHub Actions tests the full lifecycle automatically. See [.github/TESTING.md](.github/TESTING.md) for CI/CD setup.
 
 ## License
 
