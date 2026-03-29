@@ -21,7 +21,7 @@
 
     - name: Download new Semaphore version to host
       get_url:
-        url: "https://github.com/ansible-semaphore/semaphore/releases/download/{{ semaphore_new_version | default('latest') }}/semaphore_{{ semaphore_new_version | default('latest') }}_freebsd_amd64.tar.gz"
+        url: "https://github.com/ansible-semaphore/semaphore/releases/download/{{ semaphore_new_version | default('latest') }}/semaphore_{{ semaphore_new_version | default('latest') | replace('v', '') }}_{{ semaphore_arch | default('freebsd_amd64') }}.tar.gz"
         dest: /tmp/semaphore_update.tar.gz
         mode: '0644'
 
@@ -40,11 +40,9 @@
         jexec semaphore-app rm -f /tmp/semaphore.tar.gz
 
     - name: Run database migrations
-      command: >
-        jexec semaphore-app
-        semaphore migrate
-      environment:
-        SEMAPHORE_CONFIG_PATH: /usr/local/etc/semaphore
+      shell: >
+        jexec semaphore-app sh -c
+        'SEMAPHORE_CONFIG_PATH={{ semaphore_config_dir | default("/usr/local/etc/semaphore") }}/config.json semaphore migrate'
 
     - name: Start Semaphore service
       command: jexec semaphore-app service semaphore start
