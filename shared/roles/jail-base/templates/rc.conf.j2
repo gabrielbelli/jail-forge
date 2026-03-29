@@ -9,8 +9,21 @@ sendmail_outbound_enable="NO"
 sendmail_msp_queue_enable="NO"
 
 # Network
+{% if jail_vnet %}
+# VNET jail network configuration
+{% if jail_vnet_static_ip %}
+ifconfig_epair{{ jail_id }}b="inet {{ jail_vnet_static_ip }}"
+{% else %}
+ifconfig_epair{{ jail_id }}b="DHCP"
+{% endif %}
+{% if jail_vnet_gateway %}
+defaultrouter="{{ jail_vnet_gateway }}"
+{% endif %}
+{% else %}
+# Non-VNET jail network configuration
 ifconfig_DEFAULT="DHCP"
 defaultrouter="{{ jail_gateway | default('') }}"
+{% endif %}
 
 # Security
 clear_tmp_enable="YES"

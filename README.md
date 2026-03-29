@@ -8,6 +8,7 @@ jail-forge is a curated collection of battle-tested deployment configurations fo
 
 - **Infrastructure as Code**: Complete infrastructure reproducible from code
 - **Service Isolation**: Each service runs in its own FreeBSD jail
+- **Flexible Networking**: Support for alias, NAT, and VNET networking modes
 - **Production Ready**: Tested deployment patterns with proper error handling
 - **Complete Lifecycle**: Deploy, backup, restore, snapshot, and destroy operations
 - **BSD Conventions**: Follows FreeBSD standards for paths and services
@@ -83,8 +84,23 @@ All infrastructure is defined in code and can be rebuilt from scratch at any tim
 ### Service Isolation
 Each service runs in its own FreeBSD jail for security and maintainability. Multi-tier applications use separate jails (e.g., database jail + app jail).
 
-### IP Alias Mode
-Static IP addresses for stability and simplicity. No VNET complexity - jails use IP aliases on the host's network interface.
+### Network Modes
+
+jail-forge supports three networking modes for jails, each with different trade-offs:
+
+| Mode | Complexity | Use Case | Network Stack | Internet Access |
+|------|-----------|----------|---------------|-----------------|
+| **Alias** | Simple | LAN deployment with available IPs | Shared with host | Direct (via LAN) |
+| **NAT** | Moderate | Single public IP, port forwarding | Shared with host | Via host NAT |
+| **VNET** | Advanced | Full isolation, multi-tenant, custom routing | Isolated per jail | Via bridge + NAT |
+
+**When to use each mode:**
+
+- **Alias Mode (Default)**: Choose this for simple deployments where you have multiple IPs available on your LAN. Jails get static IP addresses on the host's network interface. This is the simplest and most straightforward option for home labs and small deployments.
+
+- **NAT Mode**: Choose this when you have a single public IP and need to expose services via port forwarding (e.g., 8080:80). The host performs NAT translation. Good for VPS deployments or environments with limited IPs.
+
+- **VNET Mode**: Choose this for maximum isolation and advanced networking requirements. Each jail gets its own complete network stack, enabling per-jail firewalls, custom routing tables, and true network isolation. Essential for multi-tenant environments or when jails need to run their own network services (VPN, routing, etc.).
 
 ### BSD Conventions
 - Paths: `/var/backups`, `/var/log`, `/usr/local/etc`
