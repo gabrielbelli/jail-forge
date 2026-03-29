@@ -290,6 +290,59 @@ Certificates are automatically:
 
 See [docs/TLS-SETUP.md](docs/TLS-SETUP.md) for complete TLS guide.
 
+### 🌐 Network Configuration
+
+**Three network modes available:**
+
+1. **Alias mode** - Jails use IP aliases on host interface (simplest)
+2. **NAT mode** - Jails on private network with pf NAT (port forwarding)
+3. **VNET mode** - Jails with isolated network stack (most advanced)
+
+```yaml
+# In group_vars/all/secrets.yml:
+
+# Option 1: Alias mode (default) - jails on same subnet as host
+jail_network_mode: "alias"
+jail_interface: "em0"
+jail_network_cidr: "192.168.1.0/24"
+jail_gateway: "192.168.1.1"
+jail_ip_database: "192.168.1.50"
+jail_ip_semaphore: "192.168.1.51"
+
+# Option 2: NAT mode - jails on private network with port forwarding
+jail_network_mode: "nat"
+jail_interface: "em0"
+jail_nat_interface: "lo1"
+jail_network_cidr: "10.0.0.0/24"
+jail_ip_database: "10.0.0.50"
+jail_ip_semaphore: "10.0.0.51"
+semaphore_port: 3000  # Forwarded to host
+
+# Option 3: VNET mode - isolated network stack (advanced)
+jail_network_mode: "vnet"
+jail_interface: "em0"
+jail_bridge_interface: "bridge0"  # Optional, defaults to bridge0
+jail_network_cidr: "10.0.0.0/24"
+jail_ip_database: "10.0.0.50"
+jail_ip_semaphore: "10.0.0.51"
+```
+
+**When to use each mode:**
+
+| Mode | Use Case | Pros | Cons |
+|------|----------|------|------|
+| **Alias** | Simple deployments, same subnet | Easy setup, direct access | Requires routable IPs |
+| **NAT** | Private network, port forwarding | IP isolation, any subnet | Requires pf configuration |
+| **VNET** | Maximum isolation, per-jail firewall | Full network stack isolation | More complex, requires bridge |
+
+**VNET Requirements:**
+- FreeBSD with VNET support (13.0+)
+- Bridge interface (auto-created)
+- Per-jail network configuration
+- Advanced firewall capabilities
+
+See the Advanced Configuration section below for additional VNET details.
+
 ### Group Variables
 
 - `group_vars/all/secrets.yml` - **ALL configuration and secrets**
