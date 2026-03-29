@@ -165,19 +165,21 @@ jobs:
       # PRE-CLEAN: Remove leftover infrastructure from previous failed runs
       # =========================================================================
       - name: "Pre-clean: Destroy any leftover jails from previous runs"
+        continue-on-error: true
         run: |
           first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
           cd "$first_app_dir"
           echo "Checking for leftover jails..."
           JAILS=$(ansible -b -i inventory/hosts.yml jail_hosts -m shell \
-            -a "jls -j semaphore-app 2>/dev/null || jls -j semaphore-db 2>/dev/null || true" 2>&1)
+            -a "jls -j semaphore-app 2>/dev/null || jls -j semaphore-db 2>/dev/null || true" 2>&1) || true
+          echo "$JAILS"
           if echo "$JAILS" | grep -q "semaphore"; then
             echo "Found leftover jails — cleaning up..."
             ansible-playbook -i inventory/hosts.yml \
               playbooks/destroy-all.yml \
               -e confirm_destroy_all=destroy-everything || true
           else
-            echo "No leftover jails found"
+            echo "No leftover jails found (or host unreachable — will fail at connectivity test)"
           fi
 
       # =========================================================================
