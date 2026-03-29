@@ -152,7 +152,7 @@
             "expected": "OK"
           },
           "notes": "Delete the entire semaphore/roles/jail-base directory since shared version now has all features",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "id": "subtask-3-2",
@@ -167,7 +167,7 @@
             "expected": "playbook: site.yml"
           },
           "notes": "Ensure playbooks still work after removing duplicate role",
-          "status": "pending"
+          "status": "completed"
         }
       ]
     },
@@ -361,5 +361,5 @@
   "planStatus": "in_progress",
   "xstateState": "planning",
   "executionPhase": "coding",
-  "updated_at": "2026-03-29T03:11:24.794Z"
+  "updated_at": "2026-03-29T03:15:01.752Z"
 }

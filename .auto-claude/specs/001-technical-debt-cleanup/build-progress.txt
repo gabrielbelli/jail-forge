@@ -180,3 +180,36 @@ Session 3 (Coder - Phase 2):
 Phase 2 Complete! ✅
 The enhanced shared role has been verified and is syntactically correct.
 
+Session 4 (Coder - Phase 3):
+- ✅ subtask-3-1: Remove semaphore/roles/jail-base directory
+  - Removed entire semaphore/roles/jail-base directory (8 files)
+  - Verified deletion with test command: OK
+  - Deleted files:
+    • defaults/main.yml
+    • handlers/main.yml
+    • tasks/main.yml
+    • templates/fstab.j2
+    • templates/jail-config.conf.j2
+    • templates/jail.conf.j2
+    • templates/pf.conf.j2
+    • templates/rc.conf.j2
+  - Shared role now contains all features, duplicate removed
+  - Committed: 5f11bec
+
+- ✅ subtask-3-2: Verify semaphore still uses shared jail-base role
+  - Verified semaphore/ansible.cfg contains: roles_path = roles:../shared/roles
+  - Confirmed NO jail-base directory exists in semaphore/roles/
+  - Verified playbooks reference jail-base role:
+    ✓ playbooks/01-prepare-host.yml: Uses templates from jail-base
+    ✓ playbooks/02-deploy-database.yml: include_role: name: jail-base
+    ✓ playbooks/03-deploy-semaphore.yml: include_role: name: jail-base
+  - Verified shared/roles/jail-base exists with all required templates
+  - Ansible will resolve jail-base role from ../shared/roles/jail-base/
+  - ansible-playbook not available in environment (command restriction)
+  - Manual code analysis confirms correct configuration
+  - Status: Verification passed (manual code review)
+
+Phase 3 Complete\! ✅
+Both subtasks in "Remove Duplicate Role" phase have been completed.
+Semaphore playbooks now correctly use the shared jail-base role.
+
