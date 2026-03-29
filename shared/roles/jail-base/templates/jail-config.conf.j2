@@ -5,7 +5,14 @@
     # Network configuration
 {% if jail_vnet %}
     vnet;
-    vnet.interface = "{{ jail_interface }}";
+    vnet.interface = "epair{{ jail_id }}b";
+
+    # Create epair interface and attach to bridge before jail starts
+    exec.prestart = "ifconfig epair{{ jail_id }} create up";
+    exec.prestart += "ifconfig {{ jail_bridge_interface | default('bridge0') }} addm epair{{ jail_id }}a up";
+
+    # Destroy epair interface after jail stops
+    exec.poststop = "ifconfig epair{{ jail_id }}a destroy";
 {% else %}
     ip4.addr = {{ jail_ip }};
     interface = {{ jail_nat_interface if (jail_network_mode | default('alias')) == 'nat' else jail_interface }};

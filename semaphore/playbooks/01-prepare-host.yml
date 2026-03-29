@@ -114,6 +114,27 @@
       when: jail_network_mode | default('alias') == 'nat'
       changed_when: false
 
+    # VNET mode: create bridge interface for jail networking
+    - name: Create bridge interface for VNET jails
+      command: sysrc cloned_interfaces+="{{ jail_bridge_interface | default('bridge0') }}"
+      when: jail_network_mode | default('alias') == 'vnet'
+
+    - name: Bring up bridge interface
+      shell: |
+        ifconfig {{ jail_bridge_interface | default('bridge0') }} create 2>/dev/null || true
+        ifconfig {{ jail_bridge_interface | default('bridge0') }} inet {{ jail_gateway }}/{{ jail_network_cidr.split('/')[1] }} up
+      when: jail_network_mode | default('alias') == 'vnet'
+      changed_when: false
+
+    - name: Enable IP forwarding for VNET
+      command: sysrc gateway_enable="YES"
+      when: jail_network_mode | default('alias') == 'vnet'
+
+    - name: Activate IP forwarding immediately for VNET
+      command: sysctl net.inet.ip.forwarding=1
+      when: jail_network_mode | default('alias') == 'vnet'
+      changed_when: false
+
     - name: Create pf.conf from template
       template:
         src: ../../shared/roles/jail-base/templates/pf.conf.j2

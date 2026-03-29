@@ -13,6 +13,11 @@ on:
         required: false
         type: boolean
         default: true
+      test_vnet_mode:
+        description: 'Also test VNET networking mode after NAT mode'
+        required: false
+        type: boolean
+        default: true
       update_version:
         description: 'Semaphore version for update test (empty = redeploy same version)'
         required: false
@@ -1008,16 +1013,262 @@ jobs:
             -a "zfs list -H -o name 2>/dev/null | grep 'jails/data/' || echo 'No jail data datasets (expected)'"
 
       # =========================================================================
-      # SKIP-DESTROY: Final cleanup for alias-only runs without NAT
+      # PHASE 13: VNET Mode Deployment
       # =========================================================================
-      - name: "Final: Destroy all (no NAT test)"
-        if: ${{ !inputs.test_nat_mode && !inputs.skip_destroy }}
+      - name: "Phase 13: Prepare secrets.yml for VNET mode"
+        if: ${{ inputs.test_vnet_mode }}
+        run: |
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "Switching $app_dir to VNET network mode..."
+            # Replace nat with vnet in secrets.yml
+            sed 's/jail_network_mode: "nat"/jail_network_mode: "vnet"/' \
+              "$app_dir/group_vars/all/secrets.yml" > /tmp/secrets_vnet.yml
+            mv /tmp/secrets_vnet.yml "$app_dir/group_vars/all/secrets.yml"
+            chmod 600 "$app_dir/group_vars/all/secrets.yml"
+            # Verify the change
+            grep 'jail_network_mode' "$app_dir/group_vars/all/secrets.yml"
+          done
+
+      - name: "Phase 13: Deploy with individual playbooks (VNET mode)"
+        if: ${{ inputs.test_vnet_mode }}
+        run: |
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "=== Deploying $app_dir with VNET mode (individual playbooks) ==="
+            cd "$app_dir"
+
+            echo ""
+            echo "--- Step 1/4: Prepare host (make init) ---"
+            make init
+
+            echo ""
+            echo "--- Step 2/4: Deploy database (make deploy-db) ---"
+            make deploy-db
+
+            echo ""
+            echo "--- Step 3/4: Deploy application (make deploy-app) ---"
+            make deploy-app
+
+            echo ""
+            echo "--- Step 4/4: Verify deployment (make verify) ---"
+            make verify
+
+            cd ..
+          done
+
+      # =========================================================================
+      # PHASE 14: VNET Mode Verification
+      # =========================================================================
+      - name: "Phase 14: VNET — verify bridge and epair interfaces"
+        if: ${{ inputs.test_vnet_mode }}
         run: |
           first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
           cd "$first_app_dir"
-          # Phase 9 already handled cleanup if NAT test is enabled
-          # This handles the case where NAT test is disabled
-          echo "No NAT test — Phase 9 cleanup already completed"
+
+          echo "=== VNET-specific infrastructure checks ==="
+
+          echo ""
+          echo "[1/4] Checking bridge interface..."
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+            -a "ifconfig bridge0 2>/dev/null || echo 'No bridge interface found'"
+
+          echo ""
+          echo "[2/4] Checking epair interfaces..."
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+            -a "ifconfig | grep epair || echo 'No epair interfaces found'"
+
+          echo ""
+          echo "[3/4] Checking jail vnet interfaces..."
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+            -a "jexec semaphore-app ifconfig || echo 'Cannot check jail interfaces'"
+
+          echo ""
+          echo "[4/4] Checking bridge members..."
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+            -a "ifconfig bridge0 | grep member || echo 'No bridge members found'"
+
+      - name: "Phase 14: VNET — health check services and connectivity"
+        if: ${{ inputs.test_vnet_mode }}
+        run: |
+          echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
+            app_name=$(echo "$app" | jq -r '.name')
+            app_dir=$(echo "$app" | jq -r '.working_dir')
+            jail_name=$(echo "$app" | jq -r '.jail_name')
+            db_jail_name=$(echo "$app" | jq -r '.db_jail_name')
+            port=$(echo "$app" | jq -r '.port')
+            health_endpoint=$(echo "$app" | jq -r '.health_endpoint')
+            service_name=$(echo "$app" | jq -r '.service_name')
+
+            echo "================================================="
+            echo "VNET mode health check: $app_name"
+            echo "================================================="
+            cd "$app_dir"
+
+            echo "[1/5] Service status..."
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+              -a "jexec $jail_name service $service_name status"
+
+            echo ""
+            echo "[2/5] Port $port listening..."
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+              -a "jexec $jail_name sockstat -l | grep $port"
+
+            echo ""
+            echo "[3/5] HTTPS health via jail IP..."
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+              -a "jexec $jail_name curl -k -sf https://localhost:$port$health_endpoint"
+
+            echo ""
+            echo "[4/5] Database connectivity..."
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+              -a "jexec $db_jail_name su - postgres -c \"psql -d semaphore -c 'SELECT 1 as vnet_test;'\""
+
+            echo ""
+            echo "[5/5] HTTPS via bridge network..."
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+              -a "curl -k -sf https://${{ secrets.JAIL_IP_SEMAPHORE }}:$port$health_endpoint || echo 'Bridge network access check (may require routing)'"
+
+            cd ..
+          done
+
+      - name: "Phase 14: VNET — API authentication"
+        continue-on-error: true
+        if: ${{ inputs.test_vnet_mode }}
+        run: |
+          echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
+            app_dir=$(echo "$app" | jq -r '.working_dir')
+            cd "$app_dir"
+
+            cat > playbooks/_test_api_auth.yml << 'PLAYBOOK'
+          ---
+          - name: VNET Mode API Authentication Test
+            hosts: jail_hosts
+            become: true
+            gather_facts: false
+            vars_files:
+              - ../group_vars/all/vars.yml
+              - ../group_vars/all/secrets.yml
+            tasks:
+              - name: Write auth payload
+                copy:
+                  content: '{"auth": "{{ semaphore_admin_user }}", "password": "{{ semaphore_admin_password }}"}'
+                  dest: "/{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/tmp/auth_payload.json"
+                  mode: "0600"
+
+              - name: Login in VNET mode (via jexec)
+                shell: |
+                  jexec semaphore-app curl -k -s -w '\nHTTP_STATUS:%{http_code}' -X POST \
+                    https://localhost:{{ semaphore_port }}/api/auth/login \
+                    -H 'Content-Type: application/json' \
+                    -d @/tmp/auth_payload.json
+                register: login_result
+                changed_when: false
+
+              - name: Clean up auth payload
+                file:
+                  path: "/{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore-app/tmp/auth_payload.json"
+                  state: absent
+
+              - name: Display response
+                debug:
+                  msg: "{{ login_result.stdout | default('no output') }}"
+
+              - name: Verify auth works in VNET mode
+                assert:
+                  that:
+                    - "'token' in login_result.stdout"
+                  success_msg: "VNET mode API authentication successful"
+                  fail_msg: "VNET mode API authentication failed"
+          PLAYBOOK
+
+            ansible-playbook -i inventory/hosts.yml playbooks/_test_api_auth.yml
+            rm -f playbooks/_test_api_auth.yml
+            cd ..
+          done
+
+      - name: "Phase 14: VNET — backup with compression"
+        if: ${{ inputs.test_vnet_mode }}
+        run: |
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "=== Creating compressed backup in VNET mode for $app_dir ==="
+            cd "$app_dir"
+            ansible-playbook -i inventory/hosts.yml playbooks/backup.yml \
+              -e '{"backup_compress": true}'
+            cd ..
+          done
+
+      - name: "Phase 14: VNET — verify compressed backup exists"
+        if: ${{ inputs.test_vnet_mode }}
+        run: |
+          echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
+            app_dir=$(echo "$app" | jq -r '.working_dir')
+            backup_location=$(echo "$app" | jq -r '.backup_location')
+            cd "$app_dir"
+
+            echo "Checking for compressed backup archive..."
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+              -a "ls -lh $backup_location/semaphore-backup-*.tar.gz 2>/dev/null || echo 'No compressed archive found'"
+
+            echo ""
+            echo "Listing all backups..."
+            ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+              -a "ls -lhd $backup_location/20*/ 2>/dev/null; ls -lh $backup_location/*.tar.gz 2>/dev/null" || true
+            cd ..
+          done
+
+      # =========================================================================
+      # PHASE 15: VNET Mode Cleanup
+      # =========================================================================
+      - name: "Phase 15: VNET mode — destroy all"
+        if: ${{ inputs.test_vnet_mode && !inputs.skip_destroy }}
+        run: |
+          first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
+          echo "Cleaning up VNET mode deployment..."
+          cd "$first_app_dir"
+          ansible-playbook -i inventory/hosts.yml \
+            playbooks/destroy-all.yml \
+            -e confirm_destroy_all=destroy-everything
+
+      - name: "Phase 15: VNET mode — verify cleanup (jails, bridge, epairs)"
+        if: ${{ inputs.test_vnet_mode && !inputs.skip_destroy }}
+        run: |
+          first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
+          cd "$first_app_dir"
+
+          echo "Verifying jails are destroyed..."
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+            -a "jls || echo 'No jails found (expected)'"
+
+          echo ""
+          echo "Verifying rc.conf.d cleanup..."
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+            -a "grep -E 'jail_.*_enable' /etc/rc.conf.d/jail-forge 2>/dev/null || echo 'No jail entries (expected)'"
+
+          echo ""
+          echo "Verifying bridge interface removed..."
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+            -a "ifconfig bridge0 2>/dev/null && echo 'WARNING: bridge0 still exists' || echo 'bridge0 removed (expected)'"
+
+          echo ""
+          echo "Verifying epair interfaces removed..."
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+            -a "ifconfig | grep epair && echo 'WARNING: epair interfaces still exist' || echo 'epair interfaces removed (expected)'"
+
+          echo ""
+          echo "Verifying ZFS jail data datasets removed..."
+          ansible -b -i inventory/hosts.yml jail_hosts -m shell \
+            -a "zfs list -H -o name 2>/dev/null | grep 'jails/data/' || echo 'No jail data datasets (expected)'"
+
+      # =========================================================================
+      # SKIP-DESTROY: Final cleanup for alias-only runs without NAT/VNET
+      # =========================================================================
+      - name: "Final: Destroy all (no NAT/VNET test)"
+        if: ${{ !inputs.test_nat_mode && !inputs.test_vnet_mode && !inputs.skip_destroy }}
+        run: |
+          first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
+          cd "$first_app_dir"
+          # Phase 9 already handled cleanup if NAT or VNET test is enabled
+          # This handles the case where both NAT and VNET tests are disabled
+          echo "No NAT or VNET test — Phase 9 cleanup already completed"
 
       # =========================================================================
       # TEST SUMMARY
@@ -1128,6 +1379,45 @@ jobs:
             fi
           else
             echo "Phase 10-12 — NAT Mode: Skipped"
+          fi
+          echo ""
+          if [ "${{ inputs.test_vnet_mode }}" = "true" ]; then
+            echo "Phase 13 — VNET Mode Deployment:"
+            echo "    Switched to VNET networking mode"
+            echo "    Individual playbook deployment:"
+            echo "      make init (01-prepare-host.yml)"
+            echo "      make deploy-db (02-deploy-database.yml)"
+            echo "      make deploy-app (03-deploy-semaphore.yml)"
+            echo "      make verify (04-verify-deployment.yml)"
+            echo ""
+            echo "Phase 14 — VNET Mode Verification:"
+            echo "    Bridge interface (bridge0)"
+            echo "    epair interfaces"
+            echo "    Jail vnet interfaces"
+            echo "    Bridge members"
+            echo "    Service status"
+            echo "    Port listening"
+            echo "    HTTPS health endpoint"
+            echo "    Database connectivity"
+            echo "    Bridge network access"
+            echo "    API authentication"
+            echo "    Compressed backup creation"
+            echo "    Compressed backup verification"
+            echo ""
+            if [ "${{ inputs.skip_destroy }}" = "true" ]; then
+              echo "Phase 15 — VNET Cleanup:"
+              echo "    Skipped (user requested)"
+            else
+              echo "Phase 15 — VNET Cleanup:"
+              echo "    Complete destruction (destroy-all.yml)"
+              echo "    Jail removal verified"
+              echo "    rc.conf.d cleanup verified"
+              echo "    Bridge interface removal verified"
+              echo "    epair interfaces removal verified"
+              echo "    ZFS dataset removal verified"
+            fi
+          else
+            echo "Phase 13-15 — VNET Mode: Skipped"
           fi
           echo ""
           echo "================================================================"

@@ -27,6 +27,26 @@ pass in on {{ jail_interface }} proto tcp to port {{ semaphore_port }}
 
 # Allow all traffic on jail loopback (inter-jail communication)
 pass on {{ jail_nat_interface }} all
+{% elif jail_network_mode == 'vnet' %}
+# VNET mode: jails with isolated network stacks on {{ jail_bridge_interface | default('bridge0') }}
+
+# NAT outbound traffic from VNET jails to internet (if they need external access)
+nat on {{ jail_interface }} from {{ jail_bridge_interface | default('bridge0') }}:network to any -> ({{ jail_interface }})
+
+# Allow all outbound traffic
+pass out quick on {{ jail_interface }} all
+
+# Allow established connections
+pass in quick on {{ jail_interface }} proto tcp flags S/SA keep state
+
+# Allow SSH access (essential - do not remove!)
+pass in on {{ jail_interface }} proto tcp to port 22
+
+# Allow all traffic on bridge interface (VNET jails have their own firewalls)
+pass on {{ jail_bridge_interface | default('bridge0') }} all
+
+# Allow traffic from bridge to external interfaces
+pass out on {{ jail_interface }} from {{ jail_bridge_interface | default('bridge0') }}:network to any
 {% else %}
 # Alias mode: jails directly on {{ jail_interface }}
 
