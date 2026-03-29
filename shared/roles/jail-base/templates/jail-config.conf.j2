@@ -8,7 +8,7 @@
     vnet.interface = "{{ jail_interface }}";
 {% else %}
     ip4.addr = {{ jail_ip }};
-    interface = {{ jail_interface }};
+    interface = {{ jail_nat_interface if (jail_network_mode | default('alias')) == 'nat' else jail_interface }};
 {% endif %}
 
     # Startup/shutdown
