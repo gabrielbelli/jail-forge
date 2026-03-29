@@ -128,6 +128,37 @@
       when: jail_network_mode | default('alias') == 'nat'
       ignore_errors: yes
 
+    - name: Destroy epair interfaces (VNET mode)
+      shell: |
+        ifconfig epair0 destroy 2>/dev/null || true
+        ifconfig epair1 destroy 2>/dev/null || true
+      when: jail_network_mode | default('alias') == 'vnet'
+      ignore_errors: yes
+
+    - name: Remove epair interface configuration (VNET mode)
+      shell: |
+        sysrc -x cloned_interfaces-="epair0" 2>/dev/null || true
+        sysrc -x cloned_interfaces-="epair1" 2>/dev/null || true
+      when: jail_network_mode | default('alias') == 'vnet'
+      ignore_errors: yes
+
+    - name: Check if other jails are using bridge interface (VNET mode)
+      shell: ifconfig {{ jail_bridge_interface | default('bridge0') }} 2>/dev/null | grep -q member || echo "no_members"
+      register: bridge_members_check
+      when: jail_network_mode | default('alias') == 'vnet'
+      changed_when: false
+      failed_when: false
+
+    - name: Remove bridge interface if no members (VNET mode)
+      shell: |
+        ifconfig {{ jail_bridge_interface | default('bridge0') }} destroy 2>/dev/null || true
+        sysrc -x cloned_interfaces-="{{ jail_bridge_interface | default('bridge0') }}" 2>/dev/null || true
+      when:
+        - jail_network_mode | default('alias') == 'vnet'
+        - bridge_members_check.stdout is defined
+        - "'no_members' in bridge_members_check.stdout"
+      ignore_errors: yes
+
     - name: Remove jail from autostart list
       command: sysrc -f /etc/rc.conf.d/jail jail_list-="{{ item }}"
       loop:
