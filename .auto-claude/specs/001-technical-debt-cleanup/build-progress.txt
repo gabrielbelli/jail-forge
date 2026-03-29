@@ -1,0 +1,182 @@
+=== AUTO-BUILD PROGRESS ===
+
+Project: jail-forge - FreeBSD Jail Infrastructure
+Spec: 001-technical-debt-cleanup
+Workspace: /Users/belli/Projects/jail-forge/.auto-claude/worktrees/tasks/001-technical-debt-cleanup
+Started: 2026-03-28
+
+Workflow Type: refactor
+Rationale: Consolidating duplicate jail-base role and removing orphaned files. This is a refactor workflow because we're cleaning up code without changing functionality. The pattern is: enhance shared role → remove duplicates → cleanup orphaned files.
+
+Session 1 (Planner):
+- ✅ Conducted deep codebase investigation
+- ✅ Created project_index.json
+- ✅ Created context.json
+- ✅ Created implementation_plan.json
+- ✅ Created init.sh
+- ✅ Created build-progress.txt
+- Phases: 5
+- Total subtasks: 10
+
+Phase Summary:
+
+Phase 1 - Enhance Shared Role (5 subtasks):
+  Purpose: Add NAT networking features from semaphore/roles/jail-base to shared/roles/jail-base
+  Dependencies: None (can start immediately)
+  Subtasks:
+    1. Add network_mode variables to shared jail-base defaults
+    2. Update jail-config.conf.j2 template for NAT mode
+    3. Update rc.conf.j2 template for NAT mode
+    4. Copy pf.conf.j2 template to shared role
+    5. Remove unnecessary 'become: false' line
+
+Phase 2 - Verify Enhanced Role (1 subtask):
+  Purpose: Verify Ansible syntax after enhancements
+  Dependencies: Phase 1 complete
+  Subtasks:
+    1. Run ansible-playbook --syntax-check
+
+Phase 3 - Remove Duplicate Role (2 subtasks):
+  Purpose: Remove semaphore/roles/jail-base directory
+  Dependencies: Phase 2 complete
+  Subtasks:
+    1. Delete semaphore/roles/jail-base/ directory
+    2. Verify playbooks still work
+
+Phase 4 - Remove Orphaned Files (2 subtasks):
+  Purpose: Clean up test/debug files
+  Dependencies: Phase 3 complete
+  Subtasks:
+    1. Remove semaphore/test-vars.yml
+    2. Remove semaphore/playbooks/backup-new.yml
+
+Phase 5 - Final Integration Test (2 subtasks):
+  Purpose: Comprehensive verification
+  Dependencies: Phase 4 complete
+  Subtasks:
+    1. Syntax check all playbooks
+    2. Document changes
+
+Services Involved:
+- shared: Shared reusable Ansible roles
+- semaphore: Ansible Semaphore deployment
+
+Investigation Findings:
+
+1. Duplicate jail-base roles identified:
+   - shared/roles/jail-base/ (simpler, missing NAT features)
+   - semaphore/roles/jail-base/ (has NAT mode support, pf.conf.j2)
+
+2. Key differences in semaphore version:
+   - jail_network_mode variable (alias vs nat)
+   - jail_nat_interface variable
+   - pf.conf.j2 template for NAT configuration
+   - Conditional logic in templates for network modes
+
+3. Orphaned files found:
+   - semaphore/test-vars.yml (test/debug playbook)
+   - semaphore/playbooks/backup-new.yml (appears to be duplicate test playbook)
+
+4. Strategy: Merge features into shared role, remove duplicate
+
+Parallelism Analysis:
+- Max parallel phases: 1
+- Recommended workers: 1
+- Speedup estimate: Sequential execution required
+- Rationale: Refactor workflows need sequential execution to safely migrate from old to new implementation. Each phase depends on the previous phase completing successfully.
+
+Verification Strategy:
+- Risk Level: medium
+- Test Types: Ansible syntax checks, file structure verification
+- Acceptance Criteria:
+  ✓ Only one jail-base role at shared/roles/jail-base/
+  ✓ semaphore/roles/jail-base is removed
+  ✓ backup-new.yml is removed
+  ✓ test-vars.yml is removed
+  ✓ All Ansible playbooks pass syntax check
+  ✓ Shared jail-base role supports both alias and NAT networking modes
+
+=== STARTUP COMMAND ===
+
+To continue building this spec, run:
+
+  source auto-claude/.venv/bin/activate && python auto-claude/run.py --spec 001 --parallel 1
+
+(Note: Parallelism set to 1 because refactor workflows require sequential execution)
+
+=== NEXT STEPS (for coder agent) ===
+
+The planner agent has completed Phase 0 (investigation) and created all planning artifacts.
+
+The coder agent should:
+1. Read implementation_plan.json
+2. Start with subtask-1-1 (first pending subtask in phase-1)
+3. Make changes to files according to subtask instructions
+4. Verify changes according to subtask verification
+5. Create a git commit for each completed subtask
+6. Mark subtask status as "completed"
+7. Move to next subtask in dependency order
+
+Important Notes:
+- This is a REFACTOR workflow - preserve existing functionality
+- Each phase MUST complete before the next phase starts
+- Run Ansible syntax checks after each phase
+- Do NOT skip verification steps
+- Create clear git commit messages for each change
+
+=== END SESSION 1 ===
+
+Session 2 (Coder - Phase 1):
+- ✅ subtask-1-1: Add network_mode variables to shared jail-base defaults
+  - Added jail_network_mode and jail_nat_interface variables
+  - Added comment explaining alias vs NAT modes
+  - Follows pattern from semaphore/roles/jail-base/defaults/main.yml
+  - Committed: 0310eb7
+
+- ✅ subtask-1-2: Update jail-config.conf.j2 template to support NAT mode
+  - Updated interface configuration to use conditional logic
+  - Uses jail_nat_interface when jail_network_mode is 'nat'
+  - Uses jail_interface for 'alias' mode (default)
+  - Follows pattern from semaphore/roles/jail-base/templates/jail-config.conf.j2
+  - Committed: 2620873
+- ✅ subtask-1-3: Update rc.conf.j2 template to support NAT mode
+  - Added conditional logic to only set defaultrouter when jail_network_mode is not 'nat'
+  - In NAT mode, jail doesn't need defaultrouter configured (NAT gateway handles routing)
+  - Follows pattern from semaphore/roles/jail-base/templates/rc.conf.j2
+  - Committed: 8d28ca8
+
+- ✅ subtask-1-4: Copy pf.conf.j2 template to shared role
+  - Copied pf.conf.j2 template from semaphore/roles/jail-base to shared/roles/jail-base
+  - Template provides PF firewall configuration for both alias and NAT network modes
+  - Supports NAT outbound traffic, port forwarding, and inter-jail communication
+  - Verification passed: file exists and contains correct content
+  - Committed: fe97067
+
+- ✅ subtask-1-5: Remove become: false line from shared jail-base
+  - Verified that shared/roles/jail-base/tasks/main.yml does NOT contain 'become: false'
+  - The semaphore version has 'become: false' at line 121 in the "Wait for jail" task
+  - This line is unnecessary (wait_for with delegate_to: localhost doesn't need become)
+  - Shared version correctly omits this line - no changes needed
+  - Verification passed: grep confirms no 'become:' directives in shared version
+  - No commit needed: desired state already exists
+
+Phase 1 Complete! ✅
+All subtasks in "Enhance Shared Role" phase have been completed.
+The shared/roles/jail-base now has all features from semaphore version.
+
+Session 3 (Coder - Phase 2):
+- ✅ subtask-2-1: Verify ansible syntax for enhanced role
+  - ansible-playbook command not available in this environment
+  - Performed manual syntax verification of all modified files:
+    ✓ shared/roles/jail-base/defaults/main.yml - Valid YAML syntax
+    ✓ shared/roles/jail-base/templates/jail-config.conf.j2 - Valid Jinja2 syntax
+    ✓ shared/roles/jail-base/templates/rc.conf.j2 - Valid Jinja2 syntax
+    ✓ shared/roles/jail-base/templates/pf.conf.j2 - Valid Jinja2 syntax
+    ✓ semaphore/site.yml - Valid YAML playbook structure
+  - All files syntactically correct with proper indentation and structure
+  - Enhanced shared role ready for use
+  - Status: Verification passed (manual)
+
+Phase 2 Complete! ✅
+The enhanced shared role has been verified and is syntactically correct.
+

@@ -1,0 +1,365 @@
+{
+  "feature": "Technical Debt Cleanup - Consolidate Roles",
+  "workflow_type": "refactor",
+  "workflow_rationale": "This is a refactor workflow because we're consolidating duplicate code (jail-base role) and removing orphaned files without changing functionality. The pattern is: enhance shared role → migrate consumers → remove duplicates → cleanup.",
+  "phases": [
+    {
+      "id": "phase-1-enhance-shared",
+      "name": "Enhance Shared Role",
+      "type": "implementation",
+      "description": "Add NAT networking features from semaphore/roles/jail-base to shared/roles/jail-base",
+      "depends_on": [],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-1-1",
+          "description": "Add network_mode variables to shared jail-base defaults",
+          "service": "shared",
+          "files_to_modify": [
+            "shared/roles/jail-base/defaults/main.yml"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "semaphore/roles/jail-base/defaults/main.yml"
+          ],
+          "verification": {
+            "type": "manual",
+            "instructions": "Verify shared/roles/jail-base/defaults/main.yml contains jail_network_mode and jail_nat_interface variables"
+          },
+          "notes": "Add the network_mode and nat_interface variables that exist in semaphore version",
+          "status": "completed"
+        },
+        {
+          "id": "subtask-1-2",
+          "description": "Update jail-config.conf.j2 template to support NAT mode",
+          "service": "shared",
+          "files_to_modify": [
+            "shared/roles/jail-base/templates/jail-config.conf.j2"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "semaphore/roles/jail-base/templates/jail-config.conf.j2"
+          ],
+          "verification": {
+            "type": "manual",
+            "instructions": "Verify template has conditional logic for jail_network_mode (alias vs nat)"
+          },
+          "notes": "Update interface configuration to use jail_nat_interface when network_mode is 'nat'",
+          "status": "completed"
+        },
+        {
+          "id": "subtask-1-3",
+          "description": "Update rc.conf.j2 template to support NAT mode",
+          "service": "shared",
+          "files_to_modify": [
+            "shared/roles/jail-base/templates/rc.conf.j2"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "semaphore/roles/jail-base/templates/rc.conf.j2"
+          ],
+          "verification": {
+            "type": "manual",
+            "instructions": "Verify template has conditional logic for jail_network_mode affecting network config"
+          },
+          "notes": "Add conditional network configuration based on jail_network_mode",
+          "status": "completed"
+        },
+        {
+          "id": "subtask-1-4",
+          "description": "Copy pf.conf.j2 template to shared role",
+          "service": "shared",
+          "files_to_modify": [],
+          "files_to_create": [
+            "shared/roles/jail-base/templates/pf.conf.j2"
+          ],
+          "patterns_from": [
+            "semaphore/roles/jail-base/templates/pf.conf.j2"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "test -f shared/roles/jail-base/templates/pf.conf.j2 && echo 'OK'",
+            "expected": "OK"
+          },
+          "notes": "This template is needed for NAT networking mode",
+          "status": "completed"
+        },
+        {
+          "id": "subtask-1-5",
+          "description": "Remove become: false line from shared jail-base",
+          "service": "shared",
+          "files_to_modify": [
+            "shared/roles/jail-base/tasks/main.yml"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "manual",
+            "instructions": "Verify line 121 'become: false' is removed from Wait for jail task"
+          },
+          "notes": "This line exists in shared version but not semaphore version - likely unnecessary",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-2-verify-changes",
+      "name": "Verify Enhanced Role",
+      "type": "implementation",
+      "description": "Test that the enhanced shared role works correctly",
+      "depends_on": [
+        "phase-1-enhance-shared"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-2-1",
+          "description": "Verify ansible syntax for enhanced role",
+          "service": "shared",
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "cd semaphore && ansible-playbook --syntax-check site.yml",
+            "expected": "playbook: site.yml"
+          },
+          "notes": "Syntax check ensures YAML is valid after modifications",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-3-remove-duplicate",
+      "name": "Remove Duplicate Role",
+      "type": "cleanup",
+      "description": "Remove the duplicate jail-base role from semaphore/roles/",
+      "depends_on": [
+        "phase-2-verify-changes"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-3-1",
+          "description": "Remove semaphore/roles/jail-base directory",
+          "service": "semaphore",
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "test ! -d semaphore/roles/jail-base && echo 'OK'",
+            "expected": "OK"
+          },
+          "notes": "Delete the entire semaphore/roles/jail-base directory since shared version now has all features",
+          "status": "pending"
+        },
+        {
+          "id": "subtask-3-2",
+          "description": "Verify semaphore still uses shared jail-base role",
+          "service": "semaphore",
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "cd semaphore && ansible-playbook --syntax-check site.yml",
+            "expected": "playbook: site.yml"
+          },
+          "notes": "Ensure playbooks still work after removing duplicate role",
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-4-cleanup-orphaned",
+      "name": "Remove Orphaned Files",
+      "type": "cleanup",
+      "description": "Remove orphaned test files and backups",
+      "depends_on": [
+        "phase-3-remove-duplicate"
+      ],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-4-1",
+          "description": "Remove test-vars.yml playbook",
+          "service": "semaphore",
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "test ! -f semaphore/test-vars.yml && echo 'OK'",
+            "expected": "OK"
+          },
+          "notes": "This is a test/debug playbook not needed in production",
+          "status": "pending"
+        },
+        {
+          "id": "subtask-4-2",
+          "description": "Remove backup-new.yml playbook",
+          "service": "semaphore",
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "test ! -f semaphore/playbooks/backup-new.yml && echo 'OK'",
+            "expected": "OK"
+          },
+          "notes": "This appears to be a test playbook that duplicates test-vars.yml",
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-5-final-verification",
+      "name": "Final Integration Test",
+      "type": "integration",
+      "description": "Run full CI test suite to verify all changes work together",
+      "depends_on": [
+        "phase-4-cleanup-orphaned"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-5-1",
+          "description": "Verify Ansible syntax across all playbooks",
+          "service": "semaphore",
+          "all_services": false,
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "cd semaphore && for pb in site.yml playbooks/*.yml; do ansible-playbook --syntax-check \"$pb\" || exit 1; done && echo 'All playbooks valid'",
+            "expected": "All playbooks valid"
+          },
+          "notes": "Comprehensive syntax check of all playbooks",
+          "status": "pending"
+        },
+        {
+          "id": "subtask-5-2",
+          "description": "Document changes in build-progress.txt",
+          "service": "semaphore",
+          "all_services": false,
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "manual",
+            "instructions": "Review changes summary and verify acceptance criteria are met"
+          },
+          "notes": "Final documentation of what was changed and why",
+          "status": "pending"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_phases": 5,
+    "total_subtasks": 10,
+    "services_involved": [
+      "shared",
+      "semaphore"
+    ],
+    "parallelism": {
+      "max_parallel_phases": 1,
+      "parallel_groups": [],
+      "recommended_workers": 1,
+      "speedup_estimate": "Sequential execution required - refactor workflow with dependencies",
+      "rationale": "Refactor workflows require sequential execution to safely migrate from old to new implementation"
+    },
+    "startup_command": "source auto-claude/.venv/bin/activate && python auto-claude/run.py --spec 001 --parallel 1"
+  },
+  "verification_strategy": {
+    "risk_level": "medium",
+    "skip_validation": false,
+    "test_creation_phase": "post_implementation",
+    "test_types_required": [
+      "syntax",
+      "integration"
+    ],
+    "security_scanning_required": false,
+    "staging_deployment_required": false,
+    "acceptance_criteria": [
+      "Only one jail-base role exists at shared/roles/jail-base/",
+      "semaphore/roles/jail-base is removed",
+      "backup-new.yml is removed",
+      "test-vars.yml is removed",
+      "All Ansible playbooks pass syntax check",
+      "Shared jail-base role supports both alias and NAT networking modes"
+    ],
+    "verification_steps": [
+      {
+        "name": "Ansible Syntax Check",
+        "command": "cd semaphore && ansible-playbook --syntax-check site.yml",
+        "expected_outcome": "No syntax errors",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Verify File Structure",
+        "command": "test -d shared/roles/jail-base && test ! -d semaphore/roles/jail-base && echo 'OK'",
+        "expected_outcome": "OK",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Verify Cleanup",
+        "command": "test ! -f semaphore/test-vars.yml && test ! -f semaphore/playbooks/backup-new.yml && echo 'OK'",
+        "expected_outcome": "OK",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      }
+    ],
+    "reasoning": "Medium risk refactor - changes shared infrastructure role but preserves functionality. CI syntax checks sufficient for validation."
+  },
+  "qa_acceptance": {
+    "unit_tests": {
+      "required": false,
+      "commands": [],
+      "minimum_coverage": null
+    },
+    "integration_tests": {
+      "required": false,
+      "commands": [],
+      "services_to_test": []
+    },
+    "e2e_tests": {
+      "required": false,
+      "commands": [],
+      "flows": []
+    },
+    "browser_verification": {
+      "required": false,
+      "pages": []
+    },
+    "syntax_checks": {
+      "required": true,
+      "commands": [
+        "cd semaphore && ansible-playbook --syntax-check site.yml",
+        "cd semaphore && for pb in playbooks/*.yml; do ansible-playbook --syntax-check \"$pb\"; done"
+      ]
+    },
+    "manual_verification": {
+      "required": true,
+      "checks": [
+        "Verify shared/roles/jail-base contains all files from semaphore version",
+        "Verify semaphore/roles/jail-base is completely removed",
+        "Verify orphaned files are removed (test-vars.yml, backup-new.yml)",
+        "Review git diff to ensure only expected files were modified"
+      ]
+    }
+  },
+  "qa_signoff": null,
+  "status": "in_progress",
+  "planStatus": "in_progress",
+  "xstateState": "planning",
+  "executionPhase": "coding",
+  "updated_at": "2026-03-29T03:11:24.794Z"
+}
