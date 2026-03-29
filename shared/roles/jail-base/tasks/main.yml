@@ -79,37 +79,6 @@
     mode: '0644'
   when: jail_mounts | length > 0
 
-- name: Check if epair interface exists
-  shell: ifconfig {{ jail_interface }} 2>/dev/null
-  register: epair_check
-  changed_when: false
-  failed_when: false
-  when: jail_vnet | default(false) or jail_network_mode | default('alias') == 'vnet'
-
-- name: Create epair interface for VNET jail
-  shell: |
-    ifconfig {{ jail_interface }} create 2>/dev/null || true
-    ifconfig {{ jail_interface }} up
-  when: (jail_vnet | default(false) or jail_network_mode | default('alias') == 'vnet') and epair_check.rc != 0
-  changed_when: true
-
-- name: Get corresponding epair interface pair name
-  shell: |
-    # Extract epairNb name and derive epairNa
-    EPAIR_B="{{ jail_interface }}"
-    EPAIR_A="${EPAIR_B%b}a"
-    echo "$EPAIR_A"
-  register: epair_a_name
-  changed_when: false
-  when: jail_vnet | default(false) or jail_network_mode | default('alias') == 'vnet'
-
-- name: Add epair interface to bridge
-  shell: |
-    ifconfig {{ jail_bridge_interface | default('bridge0') }} addm {{ epair_a_name.stdout }} 2>/dev/null || true
-    ifconfig {{ epair_a_name.stdout }} up
-  when: jail_vnet | default(false) or jail_network_mode | default('alias') == 'vnet'
-  changed_when: false
-
 - name: Create jail configuration file
   template:
     src: jail-config.conf.j2
