@@ -22,7 +22,9 @@ defaultrouter="{{ jail_vnet_gateway }}"
 {% else %}
 # Non-VNET jail network configuration
 ifconfig_DEFAULT="DHCP"
+{% if (jail_network_mode | default('alias')) != 'nat' %}
 defaultrouter="{{ jail_gateway | default('') }}"
+{% endif %}
 {% endif %}
 
 # Security

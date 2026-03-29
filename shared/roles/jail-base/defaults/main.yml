@@ -5,6 +5,10 @@ jail_ip: "192.168.1.100"
 jail_interface: "em0"
 jail_autostart: true
 jail_vnet: false
+
+# Network mode: "alias" (jails on host interface) or "nat" (jails on loopback with pf NAT)
+jail_network_mode: "alias"
+jail_nat_interface: "lo1"
 jail_devfs_ruleset: 4
 
 # VNET-specific settings (only used when jail_vnet: true)

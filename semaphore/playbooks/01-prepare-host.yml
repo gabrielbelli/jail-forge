@@ -78,7 +78,7 @@
 
     - name: Configure jail.conf
       template:
-        src: ../roles/jail-base/templates/jail.conf.j2
+        src: ../../shared/roles/jail-base/templates/jail.conf.j2
         dest: /etc/jail.conf
         mode: '0644'
 
@@ -137,7 +137,7 @@
 
     - name: Create pf.conf from template
       template:
-        src: ../roles/jail-base/templates/pf.conf.j2
+        src: ../../shared/roles/jail-base/templates/pf.conf.j2
         dest: /etc/pf.conf
         mode: '0644'
       notify: reload pf
