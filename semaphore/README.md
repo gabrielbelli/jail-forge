@@ -58,8 +58,8 @@ This project provides a complete, production-ready IaC solution for deploying An
 ### 1. Clone and Configure
 
 ```bash
-git clone <your-repo>
-cd semaphore-ansible
+git clone https://github.com/gabrielbelli/jail-forge.git
+cd jail-forge/semaphore
 
 # Install requirements
 make requirements
@@ -331,13 +331,12 @@ See the Advanced Configuration section below for additional VNET details.
 
 - `group_vars/all/vars.yml` - Non-sensitive configuration (network, TLS metadata, versions, backup)
 - `group_vars/all/secrets.yml` - Passwords, encryption keys, and sensitive paths
-- `group_vars/jail_hosts.yml` - Host-specific settings
 - `group_vars/all_jails.yml` - Jail defaults
 
 ## Project Structure
 
 ```
-semaphore-ansible/
+semaphore/
 ├── ansible.cfg              # Ansible configuration
 ├── site.yml                 # Main playbook
 ├── Makefile                 # Convenience commands
@@ -356,8 +355,9 @@ semaphore-ansible/
 │   ├── postgresql/         # Database setup
 │   └── semaphore/          # Semaphore installation
 └── group_vars/
-    ├── all.yml
-    ├── jail_hosts.yml
+    ├── all/
+    │   ├── vars.yml
+    │   └── secrets.yml
     └── all_jails.yml
 ```
 
