@@ -141,19 +141,23 @@
         dest: /etc/pf.conf
         mode: '0644'
       notify: reload pf
+      when: jail_network_mode | default('alias') != 'inherit'
 
     - name: Enable pf in rc.conf.d
       command: sysrc -f /etc/rc.conf.d/jail pf_enable="YES"
+      when: jail_network_mode | default('alias') != 'inherit'
 
     - name: Load pf kernel module if needed
       command: kldload pf
       register: kldload_pf
       failed_when: false
       changed_when: kldload_pf.rc == 0
+      when: jail_network_mode | default('alias') != 'inherit'
 
     - name: Start pf if not running
       shell: pfctl -e 2>/dev/null || true
       changed_when: false
+      when: jail_network_mode | default('alias') != 'inherit'
 
   handlers:
     - name: reload pf

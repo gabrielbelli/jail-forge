@@ -117,10 +117,11 @@ custom_ca_dir: "/usr/local/share/certs"
 # NETWORK CONFIGURATION
 # =============================================================================
 
-# Network mode: "alias", "nat", or "vnet"
-#   alias - Jail IPs are aliases on the host interface (must be on same subnet as host)
-#   nat   - Jails use a private loopback, pf handles NAT and port forwarding
-#   vnet  - Jails with isolated network stack (most advanced, requires bridge interface)
+# Network mode: "alias", "nat", "vnet", or "inherit"
+#   alias   - Jail IPs are aliases on the host interface (must be on same subnet as host)
+#   nat     - Jails use a private loopback, pf handles NAT and port forwarding
+#   vnet    - Jails with isolated network stack (most advanced, requires bridge interface)
+#   inherit - Jails share parent's network stack (for nested jail deployments, skips pf)
 jail_network_mode: "alias"
 
 # Host network interface (em0, igb0, vtnet0, etc.)

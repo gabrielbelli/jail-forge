@@ -20,6 +20,7 @@ all:
           hosts:
             semaphore-db:
               jail_ip: 192.168.1.50  # Change to an available IP in your network
+              # For inherit mode (nested jails): use 127.0.0.1
               jail_host: bsd-host
               jail_autostart: true
               jail_vnet: false
@@ -28,6 +29,7 @@ all:
           hosts:
             semaphore-app:
               jail_ip: 192.168.1.51  # Change to an available IP in your network
+              # For inherit mode (nested jails): use 127.0.0.1
               jail_host: bsd-host
               jail_autostart: true
               jail_vnet: false

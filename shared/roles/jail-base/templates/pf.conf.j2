@@ -1,6 +1,9 @@
 # PF Configuration for Semaphore on BSD Jails
 # Managed by Ansible - DO NOT EDIT MANUALLY
 
+{% if (jail_network_mode | default('alias')) == 'inherit' %}
+# Inherit mode: no pf rules needed (parent jail handles firewall)
+{% else %}
 # Skip filtering on loopback
 set skip on lo0
 
@@ -67,4 +70,5 @@ pass in on {{ jail_interface }} proto tcp from {{ jail_ip_semaphore }} to {{ jai
 
 # Allow jails outbound access
 pass out on {{ jail_interface }} from { {{ jail_ip_database }}, {{ jail_ip_semaphore }} }
+{% endif %}
 {% endif %}

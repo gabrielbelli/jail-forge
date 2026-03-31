@@ -19,6 +19,8 @@ ifconfig_epair{{ jail_id }}b="DHCP"
 {% if jail_vnet_gateway %}
 defaultrouter="{{ jail_vnet_gateway }}"
 {% endif %}
+{% elif (jail_network_mode | default('alias')) == 'inherit' %}
+# Inherit mode: networking provided by parent jail
 {% else %}
 # Non-VNET jail network configuration
 ifconfig_DEFAULT="DHCP"

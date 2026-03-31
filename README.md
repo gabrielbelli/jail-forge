@@ -8,7 +8,7 @@ jail-forge is a curated collection of battle-tested deployment configurations fo
 
 - **Infrastructure as Code**: Complete infrastructure reproducible from code
 - **Service Isolation**: Each service runs in its own FreeBSD jail
-- **Flexible Networking**: Support for alias, NAT, and VNET networking modes
+- **Flexible Networking**: Support for alias, NAT, VNET, and inherit networking modes
 - **Production Ready**: Tested deployment patterns with proper error handling
 - **Complete Lifecycle**: Deploy, backup, restore, snapshot, and destroy operations
 - **BSD Conventions**: Follows FreeBSD standards for paths and services
@@ -86,13 +86,14 @@ Each service runs in its own FreeBSD jail for security and maintainability. Mult
 
 ### Network Modes
 
-jail-forge supports three networking modes for jails, each with different trade-offs:
+jail-forge supports four networking modes for jails, each with different trade-offs:
 
 | Mode | Complexity | Use Case | Network Stack | Internet Access |
 |------|-----------|----------|---------------|-----------------|
 | **Alias** | Simple | LAN deployment with available IPs | Shared with host | Direct (via LAN) |
 | **NAT** | Moderate | Single public IP, port forwarding | Shared with host | Via host NAT |
 | **VNET** | Advanced | Full isolation, multi-tenant, custom routing | Isolated per jail | Via bridge + NAT |
+| **Inherit** | Simple | Nested jails (jail inside a jail) | Inherited from parent | Via parent jail |
 
 **When to use each mode:**
 
@@ -101,6 +102,8 @@ jail-forge supports three networking modes for jails, each with different trade-
 - **NAT Mode**: Choose this when you have a single public IP and need to expose services via port forwarding (e.g., 8080:80). The host performs NAT translation. Good for VPS deployments or environments with limited IPs.
 
 - **VNET Mode**: Choose this for maximum isolation and advanced networking requirements. Each jail gets its own complete network stack, enabling per-jail firewalls, custom routing tables, and true network isolation. Essential for multi-tenant environments or when jails need to run their own network services (VPN, routing, etc.).
+
+- **Inherit Mode**: Choose this when deploying inside an existing jail (nested jails). Child jails inherit the parent jail's network stack — no pf, interface creation, or IP assignment needed. Services communicate via localhost on different ports. Requires the parent jail to have `children.max`, `allow.mount.*`, and a delegated ZFS dataset.
 
 ### BSD Conventions
 - Paths: `/var/backups`, `/var/log`, `/usr/local/etc`
