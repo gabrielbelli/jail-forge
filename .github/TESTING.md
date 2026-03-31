@@ -6,19 +6,24 @@ This repository uses GitHub Actions to test the full deployment lifecycle automa
 
 Go to **Settings → Secrets and variables → Actions** and add these secrets:
 
-**Application Secrets:**
+**Application Secrets** (used in `secrets.yml`):
 - `DB_PASSWORD` - PostgreSQL database password
 - `SEMAPHORE_ADMIN_PASSWORD` - Semaphore admin password
-- `SEMAPHORE_ACCESS_KEY_ENCRYPTION` - Semaphore encryption key
+- `SEMAPHORE_ACCESS_KEY_ENCRYPTION` - Semaphore access-key encryption key
+- `SEMAPHORE_COOKIE_HASH` - Semaphore cookie hash key
+- `SEMAPHORE_COOKIE_ENCRYPTION` - Semaphore cookie encryption key
 
-**Infrastructure Secrets:**
+**Infrastructure Secrets** (used in inventory and `vars.yml`):
 - `SSH_PRIVATE_KEY` - Your SSH private key (entire content)
 - `BSD_HOST` - BSD host hostname or IP (e.g., `pedrinhas.gabrielbelli.com`)
 - `SSH_USER` - SSH username (e.g., `root`)
 - `JAIL_IP_DATABASE` - Database jail IP (e.g., `192.168.1.50`)
 - `JAIL_IP_SEMAPHORE` - Semaphore jail IP (e.g., `192.168.1.51`)
+- `JAIL_NETWORK_CIDR` - Jail network CIDR (e.g., `192.168.1.0/24`)
+- `JAIL_GATEWAY` - Jail gateway IP (e.g., `192.168.1.1`)
+- `JAIL_INTERFACE` - Host network interface (e.g., `em0`)
 
-Get values from your existing `group_vars/all/secrets.yml`.
+Generate application secrets with `openssl rand -base64 32`.
 
 ## Running Tests
 

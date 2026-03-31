@@ -10,7 +10,7 @@ local   all             all                                     peer
 host    all             all             127.0.0.1/32            {{ postgres_auth_method }}
 
 # Allow connections from jail network
-host    all             all             {{ jail_network }}      {{ postgres_auth_method }}
+host    all             all             {{ jail_network_cidr }}      {{ postgres_auth_method }}
 
 # IPv6 local connections:
 host    all             all             ::1/128                 {{ postgres_auth_method }}

@@ -179,7 +179,7 @@ That's it. Keep it simple.
 
 - **OS**: FreeBSD 13.0+ (tested on 13.5-RELEASE)
 - **Filesystem**: ZFS
-- **Software**: Ansible 2.9+, Python 3.9+
+- **Software**: Ansible 2.9+, Python 3.8+
 - **Network**: Available IP addresses for jail assignment
 
 ## Contributing

@@ -25,7 +25,3 @@ postgres_log_rotation_size: "10MB"
 postgres_effective_cache_size: "256MB"
 postgres_checkpoint_completion_target: 0.9
 postgres_wal_buffers: "16MB"
-
-# Databases and users (will be set from inventory)
-postgres_databases: []
-postgres_users: []

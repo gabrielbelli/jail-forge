@@ -1,69 +1,85 @@
 #!/bin/bash
 # Generate secrets for Ansible Semaphore deployment
-# Usage: ./scripts/generate-secrets.sh
+# Usage: ./scripts/generate-secrets.sh [--force]
+#
+# Creates group_vars/all/secrets.yml from secrets.yml.example with
+# randomly generated passwords and encryption keys.
 
 set -e
 
-echo "=========================================="
-echo "Semaphore Secrets Generator"
-echo "=========================================="
-echo ""
+# Resolve paths relative to the script's location
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+EXAMPLE_FILE="$PROJECT_DIR/group_vars/all/secrets.yml.example"
+SECRETS_FILE="$PROJECT_DIR/group_vars/all/secrets.yml"
 
-# Colors for output
+# Colours for output
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'
+NC='\033[0m' # No Colour
 
-echo -e "${BLUE}Generating database secrets...${NC}"
-POSTGRES_ADMIN_PASSWORD=$(openssl rand -base64 32)
+# Check for --force flag
+FORCE=false
+if [ "$1" = "--force" ]; then
+    FORCE=true
+fi
+
+# Safety check: don't overwrite existing secrets
+if [ -f "$SECRETS_FILE" ] && [ "$FORCE" = false ]; then
+    echo -e "${RED}Error: $SECRETS_FILE already exists.${NC}"
+    echo "Use --force to overwrite, or edit the existing file directly."
+    exit 1
+fi
+
+# Check example file exists
+if [ ! -f "$EXAMPLE_FILE" ]; then
+    echo -e "${RED}Error: $EXAMPLE_FILE not found.${NC}"
+    echo "Are you running this from the semaphore/ directory?"
+    exit 1
+fi
+
+echo -e "${BLUE}Generating secrets for Semaphore deployment...${NC}"
+
+# Generate random secrets
 SEMAPHORE_DB_PASSWORD=$(openssl rand -base64 32)
-
-echo -e "${BLUE}Generating Semaphore admin credentials...${NC}"
 SEMAPHORE_ADMIN_PASSWORD=$(openssl rand -base64 32)
-
-echo -e "${BLUE}Generating Semaphore encryption keys...${NC}"
 SEMAPHORE_COOKIE_HASH=$(openssl rand -base64 32)
 SEMAPHORE_COOKIE_ENCRYPTION=$(openssl rand -base64 32)
 SEMAPHORE_ACCESS_KEY_ENCRYPTION=$(openssl rand -base64 32)
+BACKUP_ENCRYPTION_PASSWORD=$(openssl rand -base64 32)
+
+# Copy example and replace placeholders
+cp "$EXAMPLE_FILE" "$SECRETS_FILE"
+
+# Replace placeholder values with generated secrets
+sed -i.bak \
+    -e "s|semaphore_db_password: \"changeme_generate_with_openssl_rand_base64_32\"|semaphore_db_password: \"$SEMAPHORE_DB_PASSWORD\"|" \
+    -e "s|semaphore_admin_password: \"changeme_generate_with_openssl_rand_base64_32\"|semaphore_admin_password: \"$SEMAPHORE_ADMIN_PASSWORD\"|" \
+    -e "s|semaphore_cookie_hash: \"changeme_generate_with_openssl_rand_base64_32\"|semaphore_cookie_hash: \"$SEMAPHORE_COOKIE_HASH\"|" \
+    -e "s|semaphore_cookie_encryption: \"changeme_generate_with_openssl_rand_base64_32\"|semaphore_cookie_encryption: \"$SEMAPHORE_COOKIE_ENCRYPTION\"|" \
+    -e "s|semaphore_access_key_encryption: \"changeme_generate_with_openssl_rand_base64_32\"|semaphore_access_key_encryption: \"$SEMAPHORE_ACCESS_KEY_ENCRYPTION\"|" \
+    -e "s|backup_encryption_password: \"changeme_backup_encryption_password\"|backup_encryption_password: \"$BACKUP_ENCRYPTION_PASSWORD\"|" \
+    "$SECRETS_FILE"
+
+# Clean up sed backup file
+rm -f "$SECRETS_FILE.bak"
 
 echo ""
 echo -e "${GREEN}=========================================="
-echo "Generated Secrets"
+echo " Secrets generated successfully!"
 echo -e "==========================================${NC}"
 echo ""
-
-echo -e "${YELLOW}# Database Secrets${NC}"
-echo "postgres_admin_password: \"$POSTGRES_ADMIN_PASSWORD\""
-echo "semaphore_db_password: \"$SEMAPHORE_DB_PASSWORD\""
+echo -e "  File: ${BLUE}$SECRETS_FILE${NC}"
 echo ""
-
-echo -e "${YELLOW}# Semaphore Admin Credentials${NC}"
-echo "semaphore_admin_password: \"$SEMAPHORE_ADMIN_PASSWORD\""
+echo -e "${YELLOW}Next steps:${NC}"
+echo "  1. Review and customise the file (admin email, etc.):"
+echo "     vim $SECRETS_FILE"
 echo ""
-
-echo -e "${YELLOW}# Semaphore Encryption Keys (base64-encoded)${NC}"
-echo "semaphore_cookie_hash: \"$SEMAPHORE_COOKIE_HASH\""
-echo "semaphore_cookie_encryption: \"$SEMAPHORE_COOKIE_ENCRYPTION\""
-echo "semaphore_access_key_encryption: \"$SEMAPHORE_ACCESS_KEY_ENCRYPTION\""
+echo "  2. Also review non-secret config in vars.yml:"
+echo "     vim $PROJECT_DIR/group_vars/all/vars.yml"
 echo ""
-
-echo -e "${GREEN}=========================================="
-echo "Instructions"
-echo -e "==========================================${NC}"
-echo ""
-echo "1. Copy the secrets above to group_vars/all/secrets.yml"
-echo "2. Keep the admin username and email as you prefer:"
-echo "   - semaphore_admin_user: \"admin\""
-echo "   - semaphore_admin_email: \"admin@example.com\""
-echo "   - semaphore_admin_name: \"Administrator\""
-echo ""
-echo "3. Encrypt the secrets file with ansible-vault:"
-echo "   ansible-vault encrypt group_vars/all/secrets.yml"
-echo ""
-echo "4. When running playbooks, use:"
-echo "   ansible-playbook site.yml --ask-vault-pass"
-echo ""
-echo -e "${YELLOW}Note: All encryption keys are base64-encoded (32 bytes)${NC}"
-echo -e "${YELLOW}      Generate new ones with: openssl rand -base64 32${NC}"
+echo "  3. Encrypt the secrets file:"
+echo "     ansible-vault encrypt $SECRETS_FILE"
 echo ""

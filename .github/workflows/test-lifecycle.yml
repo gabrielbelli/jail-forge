@@ -147,13 +147,23 @@ jobs:
             sed -e "s|{{DB_PASSWORD}}|${{ secrets.DB_PASSWORD }}|g" \
                 -e "s|{{SEMAPHORE_ADMIN_PASSWORD}}|${{ secrets.SEMAPHORE_ADMIN_PASSWORD }}|g" \
                 -e "s|{{SEMAPHORE_ACCESS_KEY_ENCRYPTION}}|${{ secrets.SEMAPHORE_ACCESS_KEY_ENCRYPTION }}|g" \
-                -e "s|{{JAIL_IP_DATABASE}}|${{ secrets.JAIL_IP_DATABASE }}|g" \
-                -e "s|{{JAIL_IP_SEMAPHORE}}|${{ secrets.JAIL_IP_SEMAPHORE }}|g" \
-                -e "s|{{JAIL_NETWORK_CIDR}}|${{ secrets.JAIL_NETWORK_CIDR }}|g" \
-                -e "s|{{JAIL_GATEWAY}}|${{ secrets.JAIL_GATEWAY }}|g" \
-                -e "s|{{JAIL_INTERFACE}}|${{ secrets.JAIL_INTERFACE }}|g" \
+                -e "s|{{SEMAPHORE_COOKIE_HASH}}|${{ secrets.SEMAPHORE_COOKIE_HASH }}|g" \
+                -e "s|{{SEMAPHORE_COOKIE_ENCRYPTION}}|${{ secrets.SEMAPHORE_COOKIE_ENCRYPTION }}|g" \
                 "$app_dir/group_vars/all/secrets.yml.template" > "$app_dir/group_vars/all/secrets.yml"
             chmod 600 "$app_dir/group_vars/all/secrets.yml"
+          done
+
+      - name: "Phase 1: Override vars.yml with CI environment values"
+        run: |
+          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
+            echo "Patching vars.yml for $app_dir..."
+            sed -i'' \
+                -e "s|jail_network_cidr: .*|jail_network_cidr: \"${{ secrets.JAIL_NETWORK_CIDR }}\"|" \
+                -e "s|jail_gateway: .*|jail_gateway: \"${{ secrets.JAIL_GATEWAY }}\"|" \
+                -e "s|jail_interface: .*|jail_interface: \"${{ secrets.JAIL_INTERFACE }}\"|" \
+                -e "s|jail_ip_database: .*|jail_ip_database: \"${{ secrets.JAIL_IP_DATABASE }}\"|" \
+                -e "s|jail_ip_semaphore: .*|jail_ip_semaphore: \"${{ secrets.JAIL_IP_SEMAPHORE }}\"|" \
+                "$app_dir/group_vars/all/vars.yml"
           done
 
       - name: "Phase 1: Verify secrets.yml was created"
@@ -226,7 +236,7 @@ jobs:
             echo "=== Deploying $app_dir (alias network mode) ==="
             cd "$app_dir"
             # Ensure alias mode is set (default from template)
-            grep -q 'jail_network_mode: "alias"' group_vars/all/secrets.yml \
+            grep -q 'jail_network_mode: "alias"' group_vars/all/vars.yml \
               && echo "Network mode: alias" \
               || echo "WARNING: network mode may not be alias"
             make deploy
@@ -769,13 +779,12 @@ jobs:
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "Switching $app_dir to NAT network mode..."
-            # Replace alias with nat in secrets.yml
+            # Replace alias with nat in vars.yml
             sed 's/jail_network_mode: "alias"/jail_network_mode: "nat"/' \
-              "$app_dir/group_vars/all/secrets.yml" > /tmp/secrets_nat.yml
-            mv /tmp/secrets_nat.yml "$app_dir/group_vars/all/secrets.yml"
-            chmod 600 "$app_dir/group_vars/all/secrets.yml"
+              "$app_dir/group_vars/all/vars.yml" > /tmp/vars_nat.yml
+            mv /tmp/vars_nat.yml "$app_dir/group_vars/all/vars.yml"
             # Verify the change
-            grep 'jail_network_mode' "$app_dir/group_vars/all/secrets.yml"
+            grep 'jail_network_mode' "$app_dir/group_vars/all/vars.yml"
           done
 
       - name: "Phase 10: Deploy with individual playbooks (NAT mode)"
@@ -1020,13 +1029,12 @@ jobs:
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "Switching $app_dir to VNET network mode..."
-            # Replace nat with vnet in secrets.yml
+            # Replace nat with vnet in vars.yml
             sed 's/jail_network_mode: "nat"/jail_network_mode: "vnet"/' \
-              "$app_dir/group_vars/all/secrets.yml" > /tmp/secrets_vnet.yml
-            mv /tmp/secrets_vnet.yml "$app_dir/group_vars/all/secrets.yml"
-            chmod 600 "$app_dir/group_vars/all/secrets.yml"
+              "$app_dir/group_vars/all/vars.yml" > /tmp/vars_vnet.yml
+            mv /tmp/vars_vnet.yml "$app_dir/group_vars/all/vars.yml"
             # Verify the change
-            grep 'jail_network_mode' "$app_dir/group_vars/all/secrets.yml"
+            grep 'jail_network_mode' "$app_dir/group_vars/all/vars.yml"
           done
 
       - name: "Phase 13: Deploy with individual playbooks (VNET mode)"
