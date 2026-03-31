@@ -18,4 +18,4 @@ jail_syslog_enabled: true
 jail_sendmail_enabled: false
 
 # Python
-ansible_python_interpreter: /usr/local/bin/python3.9
+ansible_python_interpreter: /usr/local/bin/python3.11

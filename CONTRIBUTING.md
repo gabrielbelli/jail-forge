@@ -72,7 +72,7 @@ jail-forge/
     │   ├── snapshot.yml
     │   ├── destroy.yml
     │   └── destroy-all.yml
-    └── docs/
+    └── docs/                    # Recommended
         ├── ARCHITECTURE.md
         ├── OPERATIONS.md
         └── QUICKSTART.md
@@ -93,9 +93,9 @@ Every application deployment must include:
 
 #### Documentation
 - **README.md**: Quick start guide with clear instructions
-- **TESTING-STATUS.md**: Test results on FreeBSD versions
-- **Architecture documentation**: How the deployment works
-- **Operations guide**: Day-to-day operations
+- **TESTING-STATUS.md** *(recommended)*: Test results on FreeBSD versions
+- **Architecture documentation** *(recommended)*: How the deployment works
+- **Operations guide** *(recommended)*: Day-to-day operations
 
 #### Configuration Files
 - **ansible.cfg**: Point to both local and shared roles:
@@ -109,8 +109,7 @@ Every application deployment must include:
 
 #### Use Shared Resources
 - Use `shared/roles/jail-base` for base jail setup
-- Reference `shared/scripts/` for common utilities
-- Follow patterns documented in `TEMPLATE-GUIDE.md`
+- Use `semaphore/` as a reference implementation for new applications
 
 #### Service Management
 - Always use `jexec` for service operations in jails:
@@ -141,11 +140,11 @@ Every application deployment must include:
 - Use rc.d scripts for services
 - Use newsyslog for log rotation
 
-#### IP Configuration
-- Use IP alias mode (not VNET) for simplicity
+#### Networking
+- jail-forge supports three networking modes: alias (default), NAT, and VNET
+- Alias mode is recommended for simplicity unless your use case requires NAT or VNET
 - Use static IPs for jails
-- Document IP requirements in README
-- No NAT rules if jails are on same network as host
+- Document IP and networking requirements in README
 
 ### 4. Testing Requirements
 
@@ -300,7 +299,7 @@ Pull requests will be reviewed for:
 
 - Open an issue for questions
 - Tag with `question` label
-- Reference `TEMPLATE-GUIDE.md` for patterns
+- Use `semaphore/` as a reference implementation for patterns
 
 ## License
 

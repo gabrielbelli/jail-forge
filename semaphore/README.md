@@ -67,22 +67,17 @@ make requirements
 # Generate secure secrets (recommended for new deployments)
 ./scripts/generate-secrets.sh
 
-# Configure secrets (ALL CONFIGURATION IN ONE FILE!)
-# Copy the generated secrets from the script output above
-vim group_vars/all/secrets.yml  # Update passwords, IPs, TLS settings
+# Configure your deployment
+vim group_vars/all/vars.yml     # Network, TLS metadata, versions, backup settings
+vim group_vars/all/secrets.yml  # Passwords and encryption keys (generated above)
 
 # Update inventory with your BSD host IP
 vim inventory/hosts.yml
 ```
 
-**Important:** All secrets and configuration are centralized in `group_vars/all/secrets.yml`:
-- Database passwords
-- Admin credentials
-- TLS certificate settings
-- Network configuration
-- Everything in one place!
-
-See [docs/SECRETS-MANAGEMENT.md](docs/SECRETS-MANAGEMENT.md) for details.
+**Important:** Configuration is split between two files:
+- `group_vars/all/vars.yml` — non-sensitive settings (network, TLS metadata, versions, backup)
+- `group_vars/all/secrets.yml` — passwords, encryption keys, and sensitive paths
 
 ### 2. Configure Inventory
 
@@ -184,18 +179,14 @@ ansible-playbook -i inventory/hosts.yml site.yml --check
 
 ### 🔐 Centralized Secrets (NEW!)
 
-**All configuration is centralized in ONE file:** `group_vars/all/secrets.yml`
+Configuration is split into two files:
 
 ```yaml
-# Edit this file for ALL configuration:
-vim group_vars/all/secrets.yml
+# Non-sensitive settings (network, TLS metadata, versions, backup):
+vim group_vars/all/vars.yml
 
-# Includes:
-# - Database passwords
-# - Admin credentials
-# - TLS/certificate settings
-# - Network configuration
-# - Everything!
+# Passwords and encryption keys:
+vim group_vars/all/secrets.yml
 ```
 
 **Key settings to update:**
@@ -227,7 +218,6 @@ Use the built-in helper script to generate all required secrets:
 **Example output:**
 ```yaml
 # Database Secrets
-postgres_admin_password: "0lxyMMOUbVxlVdQziFt/qBLjr6n81I7WThy2j/NDZFw="
 semaphore_db_password: "tZqczI2Q7ZPUrngsLdLyQpA35MqEQnNerhp7dn54WuE="
 
 # Semaphore Admin Credentials
@@ -244,7 +234,7 @@ semaphore_access_key_encryption: "20llMOxE8jw5vvhtGrIgCG6QteQ+3vo5Q2wfPMRFtUQ="
 - Each key should be exactly 32 bytes before encoding
 - Use `openssl rand -base64 32` to generate individual keys
 
-Copy the output to `group_vars/all/secrets.yml` and customize the admin username/email as needed.
+The script writes directly to `group_vars/all/secrets.yml`. Review and customise the admin username/email as needed.
 
 ### 🔒 Secrets Management with Ansible Vault
 
@@ -261,8 +251,6 @@ ansible-vault edit group_vars/all/secrets.yml
 ansible-playbook -i inventory/hosts.yml site.yml --ask-vault-pass
 ```
 
-See [docs/SECRETS-MANAGEMENT.md](docs/SECRETS-MANAGEMENT.md) for complete guide.
-
 ### 🔐 TLS/HTTPS Configuration
 
 **Two options for TLS certificates:**
@@ -271,24 +259,20 @@ See [docs/SECRETS-MANAGEMENT.md](docs/SECRETS-MANAGEMENT.md) for complete guide.
 2. **Existing certificates** - Bring your own (Let's Encrypt, etc.)
 
 ```yaml
-# In group_vars/all/secrets.yml:
+# In group_vars/all/vars.yml:
 
 # Option 1: Self-signed (automatic)
 tls_cert_strategy: "generate"
 tls_cert_lifetime_days: 3650  # 10 years
 
-# Option 2: Use existing certificates
+# Option 2: Use existing certificates (set paths in secrets.yml)
 tls_cert_strategy: "existing"
-tls_existing_cert_path: "/path/to/cert.crt"
-tls_existing_key_path: "/path/to/key.key"
 ```
 
 Certificates are automatically:
 - Generated if they don't exist
 - Reused if they already exist
 - Backed up with `make backup`
-
-See [docs/TLS-SETUP.md](docs/TLS-SETUP.md) for complete TLS guide.
 
 ### 🌐 Network Configuration
 
@@ -299,7 +283,7 @@ See [docs/TLS-SETUP.md](docs/TLS-SETUP.md) for complete TLS guide.
 3. **VNET mode** - Jails with isolated network stack (most advanced)
 
 ```yaml
-# In group_vars/all/secrets.yml:
+# In group_vars/all/vars.yml:
 
 # Option 1: Alias mode (default) - jails on same subnet as host
 jail_network_mode: "alias"
@@ -345,8 +329,8 @@ See the Advanced Configuration section below for additional VNET details.
 
 ### Group Variables
 
-- `group_vars/all/secrets.yml` - **ALL configuration and secrets**
-- `group_vars/all/vars.yml` - Non-sensitive defaults
+- `group_vars/all/vars.yml` - Non-sensitive configuration (network, TLS metadata, versions, backup)
+- `group_vars/all/secrets.yml` - Passwords, encryption keys, and sensitive paths
 - `group_vars/jail_hosts.yml` - Host-specific settings
 - `group_vars/all_jails.yml` - Jail defaults
 
@@ -470,7 +454,7 @@ jexec semaphore-app ping 192.168.1.1
 3. **Configure firewall** on BSD host to restrict access
 4. **Regular backups** - automate with cron
 5. **Keep updated** - Semaphore and FreeBSD patches
-6. **SSL/TLS** - Use reverse proxy (nginx) for HTTPS
+6. **SSL/TLS** - Use native TLS support or a reverse proxy for HTTPS
 7. **Jail hardening** - Review jail security parameters
 
 ## Advanced Configuration
@@ -498,31 +482,25 @@ Copy and modify jail definitions in inventory for additional instances.
 ## Contributing
 
 Contributions welcome! Please:
-1. Test changes on FreeBSD 13.2+
+1. Test changes on FreeBSD 13.0+
 2. Follow Ansible best practices
 3. Update documentation
 4. Submit pull requests
 
 ## License
 
-MIT License - See LICENSE file
+BSD 2-Clause License - See LICENSE file
 
 ## Documentation
 
-📚 **Comprehensive guides available:**
-
-- **[README.md](README.md)** - This file, main overview
-- **[docs/QUICKSTART.md](docs/QUICKSTART.md)** - Get running in 5 minutes
-- **[docs/SECRETS-MANAGEMENT.md](docs/SECRETS-MANAGEMENT.md)** - Centralized secrets & Ansible Vault
-- **[docs/TLS-SETUP.md](docs/TLS-SETUP.md)** - HTTPS/TLS certificate management
-- **[docs/CA-CERTIFICATES.md](docs/CA-CERTIFICATES.md)** - Custom CA import (for LDAPS, etc.)
-- **[docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md)** - Data backup & restore (IaC approach)
-- **[docs/OPERATIONS.md](docs/OPERATIONS.md)** - Day-to-day operations
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Technical deep dive
+- **[README.md](README.md)** - This file, deployment and operations guide
+- **[Project README](../README.md)** - jail-forge overview, design principles, network modes
+- **[CONTRIBUTING.md](../CONTRIBUTING.md)** - Guidelines for adding new applications
+- **[TESTING.md](../.github/TESTING.md)** - CI/CD setup and workflow configuration
 
 ## Key Features
 
-✅ **Centralized Configuration** - All settings in `group_vars/all/secrets.yml`
+✅ **Centralized Configuration** - Settings in `group_vars/all/vars.yml` and `secrets.yml`
 ✅ **HTTPS/TLS by Default** - Semaphore native TLS support
 ✅ **Certificate Management** - Auto-generation, configurable lifetime, reuse existing
 ✅ **Custom CA Import** - Support for LDAPS with self-signed CAs
@@ -538,7 +516,7 @@ MIT License - See LICENSE file
 - [FreeBSD Jails Handbook](https://docs.freebsd.org/en/books/handbook/jails/)
 - [Ansible Documentation](https://docs.ansible.com/)
 - [Ansible Vault Guide](https://docs.ansible.com/ansible/latest/user_guide/vault.html)
-- [Nginx SSL Module](https://nginx.org/en/docs/http/ngx_http_ssl_module.html)
+
 
 ## Support
 

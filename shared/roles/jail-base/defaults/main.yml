@@ -13,7 +13,7 @@ jail_devfs_ruleset: 4
 
 # VNET-specific settings (only used when jail_vnet: true)
 jail_bridge_interface: "bridge0"
-jail_vnet_interface: "epair0b"
+jail_id: 0  # Numeric ID for unique epair interfaces; override per-jail in inventory
 jail_vnet_static_ip: ""
 jail_vnet_gateway: ""
 
