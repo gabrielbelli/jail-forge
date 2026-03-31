@@ -58,8 +58,8 @@ This project provides a complete, production-ready IaC solution for deploying An
 ### 1. Clone and Configure
 
 ```bash
-git clone https://github.com/gabrielbelli/jail-forge.git
-cd jail-forge/semaphore
+git clone <your-repo>
+cd semaphore-ansible
 
 # Install requirements
 make requirements
@@ -337,7 +337,7 @@ See the Advanced Configuration section below for additional VNET details.
 ## Project Structure
 
 ```
-semaphore/
+semaphore-ansible/
 ├── ansible.cfg              # Ansible configuration
 ├── site.yml                 # Main playbook
 ├── Makefile                 # Convenience commands
