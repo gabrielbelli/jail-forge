@@ -1,0 +1,375 @@
+name: Test Inherit (Nested Jail) Mode
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_destroy:
+        description: 'Skip final cleanup (leave deployment running)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Nested Jail Lifecycle Test
+    runs-on: self-hosted
+    timeout-minutes: 60
+    environment: bsd-production
+
+    env:
+      PARENT_JAIL: "test-parent"
+      PARENT_IP: "192.168.1.60"
+      ZFS_POOL: "zroot"
+      JAIL_DATASET: "jails"
+
+    steps:
+      # =========================================================================
+      # PHASE 1: Environment Setup
+      # =========================================================================
+      - name: "Phase 1: Checkout repository"
+        run: |
+          if [ -d ".git" ]; then
+            git fetch origin "${{ github.ref }}" --depth=1
+            git checkout FETCH_HEAD
+          else
+            git clone --depth=1 --branch "${GITHUB_REF_NAME}" \
+              "https://github.com/${{ github.repository }}.git" .
+          fi
+
+      - name: "Phase 1: Verify system dependencies"
+        run: |
+          for cmd in make jq python3 jail jexec zfs; do
+            command -v "$cmd" >/dev/null 2>&1 || { echo "Missing: $cmd"; exit 1; }
+            echo "  found: $cmd"
+          done
+
+      - name: "Phase 1: Install Ansible locally"
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r semaphore/requirements.txt
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      # =========================================================================
+      # PHASE 2: Create Parent Jail with Nested Jail Support
+      # =========================================================================
+      - name: "Phase 2: Clean up any leftover parent jail"
+        continue-on-error: true
+        run: |
+          jail -r ${{ env.PARENT_JAIL }} 2>/dev/null || true
+          # Unmount any leftover mounts
+          mount | grep "${{ env.PARENT_JAIL }}" | awk '{print $3}' | sort -r | xargs -n1 umount -f 2>/dev/null || true
+          zfs destroy -r ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }} 2>/dev/null || true
+
+      - name: "Phase 2: Create parent jail ZFS dataset"
+        run: |
+          zfs create -o mountpoint=/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }} \
+            -o compression=lz4 \
+            ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}
+
+      - name: "Phase 2: Clone base system into parent jail"
+        run: |
+          BASE_PATH="/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/base"
+          PARENT_PATH="/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}"
+          if [ ! -d "$BASE_PATH/bin" ]; then
+            echo "Base system not found at $BASE_PATH — run the main lifecycle test first"
+            exit 1
+          fi
+          cp -Rp "$BASE_PATH"/* "$PARENT_PATH"/
+
+      - name: "Phase 2: Create child jail ZFS dataset and delegate"
+        run: |
+          PARENT_PATH="/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}"
+          # Create a ZFS dataset inside parent for child jails
+          zfs create ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}/jails
+          zfs create ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}/jails/base
+          zfs create ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}/jails/data
+          zfs create ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}/jails/data/db
+          zfs create ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}/jails/data/semaphore
+          # Copy base system for child jails
+          cp -Rp "/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/base"/* \
+            "$PARENT_PATH/jails/base/"
+          # Delegate ZFS to the parent jail
+          zfs set jailed=on ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}/jails
+
+      - name: "Phase 2: Configure and start parent jail"
+        run: |
+          PARENT_PATH="/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}"
+          # Copy resolv.conf
+          cp /etc/resolv.conf "$PARENT_PATH/etc/resolv.conf"
+          # Write parent jail config
+          cat > /usr/local/etc/jail.conf.d/${{ env.PARENT_JAIL }}.conf <<JAILCONF
+          ${{ env.PARENT_JAIL }} {
+              host.hostname = "${{ env.PARENT_JAIL }}.local";
+              path = "$PARENT_PATH";
+              ip4.addr = ${{ env.PARENT_IP }};
+              interface = ${{ secrets.JAIL_INTERFACE }};
+
+              # Nested jail support
+              children.max = 10;
+              allow.mount;
+              allow.mount.zfs;
+              allow.mount.devfs;
+              allow.mount.nullfs;
+              enforce_statfs = 1;
+
+              # Standard jail settings
+              exec.start = "/bin/sh /etc/rc";
+              exec.stop = "/bin/sh /etc/rc.shutdown";
+              exec.clean;
+              mount.devfs;
+              devfs_ruleset = 4;
+              allow.raw_sockets = 0;
+              allow.sysvipc = 1;
+          }
+          JAILCONF
+          # Rebuild jail.conf
+          echo "# Main jail.conf" > /etc/jail.conf
+          cat /usr/local/etc/jail.conf.d/*.conf >> /etc/jail.conf 2>/dev/null || true
+          # Delegate ZFS dataset to jail
+          zfs jail ${{ env.PARENT_JAIL }} ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}/jails 2>/dev/null || true
+          # Start parent jail
+          jail -f /etc/jail.conf -c ${{ env.PARENT_JAIL }}
+
+      - name: "Phase 2: Verify parent jail is running"
+        run: |
+          jls -j ${{ env.PARENT_JAIL }}
+          echo "Parent jail started successfully"
+
+      - name: "Phase 2: Bootstrap parent jail"
+        run: |
+          # Install packages needed for Ansible inside the parent jail
+          jexec ${{ env.PARENT_JAIL }} env ASSUME_ALWAYS_YES=yes pkg bootstrap
+          jexec ${{ env.PARENT_JAIL }} pkg install -y python311 py311-pip git ansible ca_root_nss
+
+      # =========================================================================
+      # PHASE 3: Set Up Deployment Inside Parent Jail
+      # =========================================================================
+      - name: "Phase 3: Copy repo into parent jail"
+        run: |
+          PARENT_PATH="/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}"
+          mkdir -p "$PARENT_PATH/root/jail-forge"
+          cp -R semaphore/ "$PARENT_PATH/root/jail-forge/semaphore/"
+          cp -R shared/ "$PARENT_PATH/root/jail-forge/shared/"
+
+      - name: "Phase 3: Create inventory for inherit mode"
+        run: |
+          PARENT_PATH="/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}"
+          DEPLOY_DIR="$PARENT_PATH/root/jail-forge/semaphore"
+          mkdir -p "$DEPLOY_DIR/inventory"
+          cat > "$DEPLOY_DIR/inventory/hosts.yml" <<INVENTORY
+          ---
+          all:
+            children:
+              jail_hosts:
+                hosts:
+                  localhost:
+                    ansible_connection: local
+                    ansible_python_interpreter: /usr/local/bin/python3.11
+
+              jails:
+                children:
+                  database_jails:
+                    hosts:
+                      semaphore-db:
+                        jail_ip: 127.0.0.1
+                        jail_host: localhost
+                        jail_autostart: true
+                        jail_vnet: false
+
+                  app_jails:
+                    hosts:
+                      semaphore-app:
+                        jail_ip: 127.0.0.1
+                        jail_host: localhost
+                        jail_autostart: true
+                        jail_vnet: false
+                        jail_mounts:
+                          - { src: "/var/log/semaphore-jails/semaphore-app", dest: "/var/log/semaphore", options: "rw" }
+
+              all_jails:
+                children:
+                  database_jails:
+                  app_jails:
+          INVENTORY
+
+      - name: "Phase 3: Create secrets.yml for inherit mode"
+        run: |
+          PARENT_PATH="/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}"
+          DEPLOY_DIR="$PARENT_PATH/root/jail-forge/semaphore"
+          sed -e "s|{{DB_PASSWORD}}|${{ secrets.DB_PASSWORD }}|g" \
+              -e "s|{{SEMAPHORE_ADMIN_PASSWORD}}|${{ secrets.SEMAPHORE_ADMIN_PASSWORD }}|g" \
+              -e "s|{{SEMAPHORE_ACCESS_KEY_ENCRYPTION}}|${{ secrets.SEMAPHORE_ACCESS_KEY_ENCRYPTION }}|g" \
+              -e "s|{{SEMAPHORE_COOKIE_HASH}}|${{ secrets.SEMAPHORE_COOKIE_HASH }}|g" \
+              -e "s|{{SEMAPHORE_COOKIE_ENCRYPTION}}|${{ secrets.SEMAPHORE_COOKIE_ENCRYPTION }}|g" \
+              "$DEPLOY_DIR/group_vars/all/secrets.yml.template" > "$DEPLOY_DIR/group_vars/all/secrets.yml"
+          chmod 600 "$DEPLOY_DIR/group_vars/all/secrets.yml"
+
+      - name: "Phase 3: Configure vars.yml for inherit mode"
+        run: |
+          PARENT_PATH="/${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}"
+          DEPLOY_DIR="$PARENT_PATH/root/jail-forge/semaphore"
+          sed -i'' \
+              -e 's|jail_network_mode: "alias"|jail_network_mode: "inherit"|' \
+              -e 's|jail_ip_database: .*|jail_ip_database: "127.0.0.1"|' \
+              -e 's|jail_ip_semaphore: .*|jail_ip_semaphore: "127.0.0.1"|' \
+              -e "s|zfs_pool: .*|zfs_pool: \"${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }}/jails\"|" \
+              -e 's|jail_dataset: .*|jail_dataset: ""|' \
+              "$DEPLOY_DIR/group_vars/all/vars.yml"
+
+      # =========================================================================
+      # PHASE 4: Deploy Inside Parent Jail (Inherit Mode)
+      # =========================================================================
+      - name: "Phase 4: Syntax check inside parent jail"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            cd /root/jail-forge/semaphore
+            ansible-playbook -i inventory/hosts.yml site.yml --syntax-check
+          '
+
+      - name: "Phase 4: Deploy (prepare host)"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            cd /root/jail-forge/semaphore
+            ansible-playbook -i inventory/hosts.yml playbooks/01-prepare-host.yml
+          '
+
+      - name: "Phase 4: Deploy (database)"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            cd /root/jail-forge/semaphore
+            ansible-playbook -i inventory/hosts.yml playbooks/02-deploy-database.yml
+          '
+
+      - name: "Phase 4: Deploy (semaphore)"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            cd /root/jail-forge/semaphore
+            ansible-playbook -i inventory/hosts.yml playbooks/03-deploy-semaphore.yml
+          '
+
+      # =========================================================================
+      # PHASE 5: Verify Deployment
+      # =========================================================================
+      - name: "Phase 5: Verify child jails are running"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} jls
+          echo "---"
+          jexec ${{ env.PARENT_JAIL }} jls -j semaphore-db
+          jexec ${{ env.PARENT_JAIL }} jls -j semaphore-app
+
+      - name: "Phase 5: Verify PostgreSQL is listening"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            jexec semaphore-db sockstat -l -4 | grep 5432
+          '
+
+      - name: "Phase 5: Verify Semaphore is listening"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            jexec semaphore-app sockstat -l -4 | grep 3000
+          '
+
+      - name: "Phase 5: Health check — API ping via localhost"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            # Wait for Semaphore to be ready
+            for i in $(seq 1 30); do
+              if curl -sk https://127.0.0.1:3000/api/ping 2>/dev/null | grep -q pong; then
+                echo "Semaphore API responding"
+                exit 0
+              fi
+              echo "Waiting for Semaphore... ($i/30)"
+              sleep 2
+            done
+            echo "Semaphore did not respond in time"
+            exit 1
+          '
+
+      - name: "Phase 5: Health check — API authentication"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            TOKEN=$(curl -sk -X POST https://127.0.0.1:3000/api/auth/login \
+              -H "Content-Type: application/json" \
+              -d "{\"auth\": \"admin\", \"password\": \"${{ secrets.SEMAPHORE_ADMIN_PASSWORD }}\"}" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get(\"token\",\"\"))" 2>/dev/null)
+            if [ -z "$TOKEN" ]; then
+              echo "Authentication failed"
+              exit 1
+            fi
+            echo "Authentication successful (token obtained)"
+          '
+
+      # =========================================================================
+      # PHASE 6: Test Backup & Restore
+      # =========================================================================
+      - name: "Phase 6: Create backup"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            cd /root/jail-forge/semaphore
+            ansible-playbook -i inventory/hosts.yml playbooks/backup.yml
+          '
+
+      - name: "Phase 6: Verify backup exists"
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            ls -lhd /var/backups/semaphore/20*/ 2>/dev/null || echo "No backup directories found"
+            BACKUP_COUNT=$(ls -1d /var/backups/semaphore/20* 2>/dev/null | wc -l | tr -d " ")
+            echo "Backup count: $BACKUP_COUNT"
+            [ "$BACKUP_COUNT" -ge 1 ] || exit 1
+          '
+
+      # =========================================================================
+      # PHASE 7: Cleanup
+      # =========================================================================
+      - name: "Phase 7: Destroy child jails"
+        if: ${{ !inputs.skip_destroy }}
+        run: |
+          jexec ${{ env.PARENT_JAIL }} sh -c '
+            cd /root/jail-forge/semaphore
+            ansible-playbook -i inventory/hosts.yml playbooks/destroy-all.yml \
+              -e confirm_destroy_all=destroy-everything
+          ' || true
+
+      - name: "Phase 7: Stop and destroy parent jail"
+        if: ${{ !inputs.skip_destroy }}
+        run: |
+          jail -r ${{ env.PARENT_JAIL }} 2>/dev/null || true
+          sleep 2
+          # Unmount remaining mounts
+          mount | grep "${{ env.PARENT_JAIL }}" | awk '{print $3}' | sort -r | xargs -n1 umount -f 2>/dev/null || true
+          # Remove parent jail config
+          rm -f /usr/local/etc/jail.conf.d/${{ env.PARENT_JAIL }}.conf
+          # Rebuild jail.conf
+          echo "# Main jail.conf" > /etc/jail.conf
+          cat /usr/local/etc/jail.conf.d/*.conf >> /etc/jail.conf 2>/dev/null || true
+          # Destroy ZFS datasets
+          zfs destroy -r ${{ env.ZFS_POOL }}/${{ env.JAIL_DATASET }}/data/${{ env.PARENT_JAIL }} 2>/dev/null || true
+          echo "Parent jail destroyed"
+
+      - name: "Phase 7: Verify cleanup"
+        if: ${{ !inputs.skip_destroy }}
+        run: |
+          jls -j ${{ env.PARENT_JAIL }} 2>/dev/null && echo "WARNING: Parent jail still running" && exit 1 || true
+          echo "Cleanup complete"
+
+      # =========================================================================
+      # Summary
+      # =========================================================================
+      - name: "Test summary"
+        if: always()
+        run: |
+          echo "========================================"
+          echo " Inherit Mode (Nested Jail) Test Results"
+          echo "========================================"
+          echo ""
+          echo "  Parent jail: ${{ env.PARENT_JAIL }}"
+          echo "  Network mode: inherit"
+          echo "  Child jails: semaphore-app, semaphore-db"
+          echo "  Communication: localhost (127.0.0.1)"
+          echo ""
+          echo "========================================"

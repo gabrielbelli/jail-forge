@@ -276,11 +276,12 @@ Certificates are automatically:
 
 ### 🌐 Network Configuration
 
-**Three network modes available:**
+**Four network modes available:**
 
 1. **Alias mode** - Jails use IP aliases on host interface (simplest)
 2. **NAT mode** - Jails on private network with pf NAT (port forwarding)
 3. **VNET mode** - Jails with isolated network stack (most advanced)
+4. **Inherit mode** - Jails share parent's network (for nested jail deployments)
 
 ```yaml
 # In group_vars/all/vars.yml:
@@ -309,6 +310,11 @@ jail_bridge_interface: "bridge0"  # Optional, defaults to bridge0
 jail_network_cidr: "10.0.0.0/24"
 jail_ip_database: "10.0.0.50"
 jail_ip_semaphore: "10.0.0.51"
+
+# Option 4: Inherit mode - nested jails (inside another jail)
+jail_network_mode: "inherit"
+jail_ip_database: "127.0.0.1"    # Services communicate via localhost
+jail_ip_semaphore: "127.0.0.1"
 ```
 
 **When to use each mode:**
@@ -318,12 +324,18 @@ jail_ip_semaphore: "10.0.0.51"
 | **Alias** | Simple deployments, same subnet | Easy setup, direct access | Requires routable IPs |
 | **NAT** | Private network, port forwarding | IP isolation, any subnet | Requires pf configuration |
 | **VNET** | Maximum isolation, per-jail firewall | Full network stack isolation | More complex, requires bridge |
+| **Inherit** | Nested jails (jail inside a jail) | No host access needed, no pf | No network isolation between jails |
 
 **VNET Requirements:**
 - FreeBSD with VNET support (13.0+)
 - Bridge interface (auto-created)
 - Per-jail network configuration
 - Advanced firewall capabilities
+
+**Inherit Mode Requirements (nested jails):**
+- Parent jail with `children.max` set by host admin
+- `allow.mount`, `allow.mount.zfs`, `allow.mount.devfs`, `allow.mount.nullfs`
+- Delegated ZFS dataset (`jailed=on`)
 
 See the Advanced Configuration section below for additional VNET details.
 
