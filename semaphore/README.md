@@ -49,7 +49,7 @@ This project provides a complete, production-ready IaC solution for deploying An
 - Ansible 2.10+
 - Python 3.8+
 - SSH access to FreeBSD host
-- Required Ansible collections (install with `make requirements`):
+- Required Ansible collections (install with `make requirements` from project root):
   - community.general
   - community.postgresql
 
@@ -59,10 +59,13 @@ This project provides a complete, production-ready IaC solution for deploying An
 
 ```bash
 git clone https://github.com/gabrielbelli/jail-forge.git
-cd jail-forge/semaphore
+cd jail-forge
 
-# Install requirements
+# Install Ansible and required collections
 make requirements
+
+# Configure and deploy Semaphore
+cd semaphore
 
 # Generate secure secrets (recommended for new deployments)
 ./scripts/generate-secrets.sh
@@ -355,22 +358,24 @@ semaphore/
 ├── inventory/
 │   └── hosts.yml           # Inventory definition
 ├── playbooks/
-│   ├── 01-prepare-host.yml # Prepare BSD host
-│   ├── 02-deploy-database.yml
-│   ├── 03-deploy-semaphore.yml
+│   ├── 01-prepare-host.yml     # Prepare BSD host
+│   ├── 02-deploy-database.yml  # Deploy PostgreSQL jail
+│   ├── 03-deploy-semaphore.yml # Deploy Semaphore jail
 │   ├── 04-verify-deployment.yml
-│   ├── update-semaphore.yml
 │   ├── backup.yml
-│   └── destroy.yml
+│   ├── restore.yml
+│   ├── snapshot.yml
+│   ├── update-semaphore.yml
+│   ├── destroy.yml
+│   ├── destroy-all.yml
+│   └── disaster-recovery.yml
 ├── roles/
-│   ├── jail-base/          # Base jail creation
 │   ├── postgresql/         # Database setup
 │   └── semaphore/          # Semaphore installation
 └── group_vars/
     ├── all/
     │   ├── vars.yml
     │   └── secrets.yml
-    └── all_jails.yml
 ```
 
 ## Operations Guide

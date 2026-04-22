@@ -141,7 +141,7 @@ Every application deployment must include:
 - Use newsyslog for log rotation
 
 #### Networking
-- jail-forge supports three networking modes: alias (default), NAT, and VNET
+- jail-forge supports four networking modes: alias (default), NAT, VNET, and inherit
 - Alias mode is recommended for simplicity unless your use case requires NAT or VNET
 - Use static IPs for jails
 - Document IP and networking requirements in README

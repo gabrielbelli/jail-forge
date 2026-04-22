@@ -1,7 +1,7 @@
 # Makefile for Ansible Semaphore on BSD Jails
 # Provides convenient shortcuts for common operations
 
-.PHONY: help init deploy update backup snapshot restore destroy destroy-all check lint test clean
+.PHONY: help init deploy update backup snapshot restore destroy destroy-all check lint test clean docs
 
 # Variables
 ANSIBLE_PLAYBOOK := ansible-playbook
@@ -132,10 +132,6 @@ vault-encrypt: ## Encrypt a file with ansible vault
 vault-decrypt: ## Decrypt a file with ansible vault
 	@read -p "Enter file path to decrypt: " file; \
 	ansible-vault decrypt $$file
-
-requirements: ## Install required Ansible collections and Python packages
-	ansible-galaxy collection install community.general community.postgresql
-	pip install psycopg2-binary
 
 docs: ## Show documentation
 	@echo "Documentation:"

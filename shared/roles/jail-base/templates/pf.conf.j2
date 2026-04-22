@@ -1,4 +1,4 @@
-# PF Configuration for Semaphore on BSD Jails
+# PF Configuration for BSD Jails
 # Managed by Ansible - DO NOT EDIT MANUALLY
 
 {% if (jail_network_mode | default('alias')) == 'inherit' %}
@@ -11,10 +11,12 @@ set skip on lo0
 # NAT mode: jails on {{ jail_nat_interface }} with NAT/port forwarding via {{ jail_interface }}
 
 # NAT outbound traffic from jails
-nat on {{ jail_interface }} from { {{ jail_ip_database }}, {{ jail_ip_semaphore }} } to any -> ({{ jail_interface }})
+nat on {{ jail_interface }} from { {{ pf_jail_ips | join(', ') }} } to any -> ({{ jail_interface }})
 
-# Port forward: host:{{ semaphore_port }} -> semaphore jail
-rdr on {{ jail_interface }} proto tcp to port {{ semaphore_port }} -> {{ jail_ip_semaphore }} port {{ semaphore_port }}
+# Port forwarding rules
+{% for fwd in pf_port_forwards %}
+rdr on {{ jail_interface }} proto tcp to port {{ fwd.port }} -> {{ fwd.jail_ip }} port {{ fwd.port }}
+{% endfor %}
 
 # Allow all outbound traffic
 pass out quick on {{ jail_interface }} all
@@ -25,8 +27,10 @@ pass in quick on {{ jail_interface }} proto tcp flags S/SA keep state
 # Allow SSH access (essential - do not remove!)
 pass in on {{ jail_interface }} proto tcp to port 22
 
-# Allow Semaphore web access (redirected to jail via rdr)
-pass in on {{ jail_interface }} proto tcp to port {{ semaphore_port }}
+# Allow forwarded ports
+{% for fwd in pf_port_forwards %}
+pass in on {{ jail_interface }} proto tcp to port {{ fwd.port }}
+{% endfor %}
 
 # Allow all traffic on jail loopback (inter-jail communication)
 pass on {{ jail_nat_interface }} all
@@ -62,13 +66,17 @@ pass in quick on {{ jail_interface }} proto tcp flags S/SA keep state
 # Allow SSH access (essential - do not remove!)
 pass in on {{ jail_interface }} proto tcp to port 22
 
-# Allow Semaphore web access
-pass in on {{ jail_interface }} proto tcp to {{ jail_ip_semaphore }} port {{ semaphore_port }}
+# Allow inbound access to jail services
+{% for rule in pf_inbound_rules %}
+pass in on {{ jail_interface }} proto {{ rule.proto }} to {{ rule.jail_ip }} port {{ rule.port }}
+{% endfor %}
 
-# Allow PostgreSQL access from Semaphore jail
-pass in on {{ jail_interface }} proto tcp from {{ jail_ip_semaphore }} to {{ jail_ip_database }} port 5432
+# Allow inter-jail traffic
+{% for rule in pf_inter_jail_rules %}
+pass in on {{ jail_interface }} proto {{ rule.proto }} from {{ rule.from_ip }} to {{ rule.to_ip }} port {{ rule.port }}
+{% endfor %}
 
 # Allow jails outbound access
-pass out on {{ jail_interface }} from { {{ jail_ip_database }}, {{ jail_ip_semaphore }} }
+pass out on {{ jail_interface }} from { {{ pf_jail_ips | join(', ') }} }
 {% endif %}
 {% endif %}

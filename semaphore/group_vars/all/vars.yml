@@ -123,6 +123,29 @@ jail_ip_semaphore: "192.168.1.51"
 semaphore_port: 3000
 
 # =============================================================================
+# PF FIREWALL RULES
+# =============================================================================
+# These lists drive the shared pf.conf.j2 template.
+# Each app defines its own jail IPs, port forwards, and inter-jail rules.
+
+# All jail IPs (used for NAT source and outbound rules)
+pf_jail_ips:
+  - "{{ jail_ip_database }}"
+  - "{{ jail_ip_semaphore }}"
+
+# Port forwards: host port -> jail (NAT mode only)
+pf_port_forwards:
+  - { port: "{{ semaphore_port }}", jail_ip: "{{ jail_ip_semaphore }}" }
+
+# Inbound rules: allow external traffic to jail services (alias mode)
+pf_inbound_rules:
+  - { jail_ip: "{{ jail_ip_semaphore }}", port: "{{ semaphore_port }}", proto: "tcp" }
+
+# Inter-jail rules: allow traffic between jails on specific ports (alias mode)
+pf_inter_jail_rules:
+  - { from_ip: "{{ jail_ip_semaphore }}", to_ip: "{{ jail_ip_database }}", port: 5432, proto: "tcp" }
+
+# =============================================================================
 # SYSTEM CONFIGURATION
 # =============================================================================
 freebsd_version: "13.5-RELEASE"  # Or your FreeBSD version

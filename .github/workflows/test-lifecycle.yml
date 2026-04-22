@@ -87,12 +87,8 @@ jobs:
           python3 -m venv .venv
           . .venv/bin/activate
           pip install --upgrade pip
-          for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
-            if [ -f "$app_dir/requirements.txt" ]; then
-              echo "Installing requirements for $app_dir..."
-              pip install -r "$app_dir/requirements.txt"
-            fi
-          done
+          pip install -r requirements.txt
+          ansible-galaxy collection install community.general community.postgresql
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: "Phase 1: Set up SSH key"

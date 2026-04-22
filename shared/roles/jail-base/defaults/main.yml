@@ -45,3 +45,16 @@ jail_sendmail_enabled: false
 # Nullfs mounts (optional): Mount host directories into jail
 # Format: { src: "/host/path", dest: "/jail/path", options: "ro" }
 jail_mounts: []
+
+# PF firewall configuration (override per-app in group_vars/all/vars.yml)
+# List of all jail IPs (used for NAT source, outbound rules)
+pf_jail_ips: []
+# Port forwards: host port -> jail IP:port (NAT mode only)
+# Format: { port: 3000, jail_ip: "192.168.1.51" }
+pf_port_forwards: []
+# Inbound rules: allow external traffic to specific jail:port (alias mode)
+# Format: { jail_ip: "192.168.1.51", port: 3000, proto: "tcp" }
+pf_inbound_rules: []
+# Inter-jail rules: allow jail-to-jail traffic on specific ports (alias mode)
+# Format: { from_ip: "192.168.1.51", to_ip: "192.168.1.50", port: 5432, proto: "tcp" }
+pf_inter_jail_rules: []

@@ -90,9 +90,7 @@
     - name: Configure jail IPs on loopback interface
       command: >
         sysrc ifconfig_{{ jail_nat_interface }}_alias{{ idx }}="inet {{ item }} netmask 255.255.255.255"
-      loop:
-        - "{{ jail_ip_database }}"
-        - "{{ jail_ip_semaphore }}"
+      loop: "{{ pf_jail_ips }}"
       loop_control:
         index_var: idx
       when: jail_network_mode | default('alias') == 'nat'
@@ -100,8 +98,9 @@
     - name: Bring up loopback interface
       shell: |
         ifconfig {{ jail_nat_interface }} create 2>/dev/null || true
-        ifconfig {{ jail_nat_interface }} inet {{ jail_ip_database }} netmask 255.255.255.255 alias
-        ifconfig {{ jail_nat_interface }} inet {{ jail_ip_semaphore }} netmask 255.255.255.255 alias
+        {% for ip in pf_jail_ips %}
+        ifconfig {{ jail_nat_interface }} inet {{ ip }} netmask 255.255.255.255 alias
+        {% endfor %}
       when: jail_network_mode | default('alias') == 'nat'
       changed_when: false
 
