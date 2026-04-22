@@ -1419,7 +1419,7 @@ jobs:
           echo "Configuring vars.yml for inherit mode..."
           ansible -b -i inventory/hosts.yml jail_hosts -m shell -a "
             sed -i '' \
-              -e 's|jail_network_mode: \"alias\"|jail_network_mode: \"inherit\"|' \
+              -e 's|jail_network_mode: .*|jail_network_mode: \"inherit\"|' \
               -e 's|jail_ip_database: .*|jail_ip_database: \"127.0.0.1\"|' \
               -e 's|jail_ip_semaphore: .*|jail_ip_semaphore: \"127.0.0.1\"|' \
               -e 's|zfs_pool: .*|zfs_pool: \"zroot/jails/data/test-parent\"|' \
