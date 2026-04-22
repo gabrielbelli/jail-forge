@@ -171,16 +171,12 @@
       community.general.zfs:
         name: "{{ zfs_pool }}/{{ jail_dataset }}/data/db@backup-{{ backup_timestamp }}"
         state: present
-        extra_zfs_properties:
-          type: snapshot
       when: backup_zfs_snapshots | default(false)
 
     - name: Take ZFS snapshot of Semaphore (optional - for quick rollback)
       community.general.zfs:
         name: "{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore@backup-{{ backup_timestamp }}"
         state: present
-        extra_zfs_properties:
-          type: snapshot
       when: backup_zfs_snapshots | default(false)
 
     # =============================================================================
