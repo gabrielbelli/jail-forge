@@ -59,10 +59,13 @@ This project provides a complete, production-ready IaC solution for deploying An
 
 ```bash
 git clone https://github.com/gabrielbelli/jail-forge.git
-cd jail-forge/semaphore
+cd jail-forge
 
-# Install requirements
+# Install Ansible and required collections
 make requirements
+
+# Configure and deploy Semaphore
+cd semaphore
 
 # Generate secure secrets (recommended for new deployments)
 ./scripts/generate-secrets.sh
