@@ -8,38 +8,6 @@
 semaphore_version: "v2.16.37"
 postgres_version: "15"
 # =============================================================================
-# TIMEZONE AND LOCALE
-# =============================================================================
-timezone: "UTC"
-locale: "en_US.UTF-8"
-
-# =============================================================================
-# COMMON PACKAGES
-# =============================================================================
-common_packages:
-  - python311
-  - py311-pip
-  - git
-  - curl
-  - ca_root_nss
-  - vim
-  - htop
-
-# =============================================================================
-# MONITORING (Optional) - NOT YET IMPLEMENTED, placeholder for future use
-# =============================================================================
-monitoring_enabled: false
-monitoring_port: 9090
-
-# =============================================================================
-# LOGGING
-# =============================================================================
-log_retention_days: 30
-syslog_remote_enabled: false  # NOT YET IMPLEMENTED, placeholder for future use
-syslog_remote_host: ""
-syslog_remote_port: 514
-
-# =============================================================================
 # BACKUP RETENTION
 # =============================================================================
 # Backup location (BSD standard: /var/backups)
@@ -87,6 +55,12 @@ tls_cert_san:
   - "DNS:semaphore.example.com"
   - "DNS:*.example.com"
   - "IP:192.168.1.51"  # Update with your jail IP
+
+# Pre-existing TLS certificate paths (when tls_cert_strategy: "existing")
+# These files will be copied from your control machine to the Semaphore jail
+tls_existing_cert_path: "/path/to/your/certificate.crt"
+tls_existing_key_path: "/path/to/your/private.key"
+tls_existing_ca_path: "/path/to/your/ca-bundle.crt"  # Optional
 
 # Certificate file paths on the Semaphore jail
 tls_cert_dir: "/usr/local/etc/ssl"
