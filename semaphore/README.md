@@ -77,7 +77,7 @@ vim inventory/hosts.yml
 
 **Important:** Configuration is split between two files:
 - `group_vars/all/vars.yml` — non-sensitive settings (network, TLS metadata, versions, backup)
-- `group_vars/all/secrets.yml` — passwords, encryption keys, and sensitive paths
+- `group_vars/all/secrets.yml` — passwords and encryption keys
 
 ### 2. Configure Inventory
 
@@ -265,7 +265,7 @@ ansible-playbook -i inventory/hosts.yml site.yml --ask-vault-pass
 tls_cert_strategy: "generate"
 tls_cert_lifetime_days: 3650  # 10 years
 
-# Option 2: Use existing certificates (set paths in secrets.yml)
+# Option 2: Use existing certificates (set paths in vars.yml)
 tls_cert_strategy: "existing"
 ```
 
@@ -342,7 +342,7 @@ See the Advanced Configuration section below for additional VNET details.
 ### Group Variables
 
 - `group_vars/all/vars.yml` - Non-sensitive configuration (network, TLS metadata, versions, backup)
-- `group_vars/all/secrets.yml` - Passwords, encryption keys, and sensitive paths
+- `group_vars/all/secrets.yml` - Passwords and encryption keys
 - `group_vars/all_jails.yml` - Jail defaults
 
 ## Project Structure

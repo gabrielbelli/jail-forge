@@ -1340,6 +1340,12 @@ jobs:
             jls -j $PARENT
             zfs jail $PARENT $ZP/data/$PARENT/child-jails 2>/dev/null || true
 
+            # Fix ZFS mountpoints inside jail — host mountpoints do not match
+            # jail-internal paths. The playbook expects /{zfs_pool}/{jail_dataset}/...
+            # which is /zroot/jails/data/test-parent/child-jails/... inside the jail.
+            jexec $PARENT zfs set mountpoint=/$ZP/data/$PARENT/child-jails $ZP/data/$PARENT/child-jails
+            jexec $PARENT zfs mount -a
+
             # Bootstrap parent jail
             jexec $PARENT env ASSUME_ALWAYS_YES=yes pkg bootstrap
             PKGS="python311 py311-pip git ca_root_nss"
