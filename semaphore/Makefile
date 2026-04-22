@@ -134,9 +134,12 @@ vault-decrypt: ## Decrypt a file with ansible vault
 	ansible-vault decrypt $$file
 
 requirements: ## Install required Ansible collections and Python packages
-	@command -v pip >/dev/null 2>&1 || { echo "pip not found. Install with: pkg install py311-pip"; exit 1; }
+	@command -v pip >/dev/null 2>&1 || { echo "Error: pip not found. Run: sudo pkg install -y py311-pip"; exit 1; }
+	@command -v python3.11 >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1 || { echo "Error: python3 not found. Run: sudo pkg install -y python311"; exit 1; }
 	pip install -r requirements.txt
 	ansible-galaxy collection install community.general community.postgresql
+	@echo ""
+	@echo "All requirements installed successfully."
 
 docs: ## Show documentation
 	@echo "Documentation:"
