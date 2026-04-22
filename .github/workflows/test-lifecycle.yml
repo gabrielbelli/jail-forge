@@ -170,6 +170,7 @@ jobs:
                 -e "s|jail_interface: .*|jail_interface: \"${{ secrets.JAIL_INTERFACE }}\"|" \
                 -e "s|jail_ip_database: .*|jail_ip_database: \"${{ secrets.JAIL_IP_DATABASE }}\"|" \
                 -e "s|jail_ip_semaphore: .*|jail_ip_semaphore: \"${{ secrets.JAIL_IP_SEMAPHORE }}\"|" \
+                -e "s|freebsd_version: .*|freebsd_version: \"15.0-RELEASE\"|" \
                 "$app_dir/group_vars/all/vars.yml"
           done
 
