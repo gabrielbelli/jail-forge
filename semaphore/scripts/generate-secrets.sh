@@ -48,7 +48,6 @@ SEMAPHORE_ADMIN_PASSWORD=$(openssl rand -base64 32)
 SEMAPHORE_COOKIE_HASH=$(openssl rand -base64 32)
 SEMAPHORE_COOKIE_ENCRYPTION=$(openssl rand -base64 32)
 SEMAPHORE_ACCESS_KEY_ENCRYPTION=$(openssl rand -base64 32)
-BACKUP_ENCRYPTION_PASSWORD=$(openssl rand -base64 32)
 
 # Copy example and replace placeholders
 cp "$EXAMPLE_FILE" "$SECRETS_FILE"
@@ -60,7 +59,6 @@ sed -i.bak \
     -e "s|semaphore_cookie_hash: \"changeme_generate_with_openssl_rand_base64_32\"|semaphore_cookie_hash: \"$SEMAPHORE_COOKIE_HASH\"|" \
     -e "s|semaphore_cookie_encryption: \"changeme_generate_with_openssl_rand_base64_32\"|semaphore_cookie_encryption: \"$SEMAPHORE_COOKIE_ENCRYPTION\"|" \
     -e "s|semaphore_access_key_encryption: \"changeme_generate_with_openssl_rand_base64_32\"|semaphore_access_key_encryption: \"$SEMAPHORE_ACCESS_KEY_ENCRYPTION\"|" \
-    -e "s|backup_encryption_password: \"changeme_backup_encryption_password\"|backup_encryption_password: \"$BACKUP_ENCRYPTION_PASSWORD\"|" \
     "$SECRETS_FILE"
 
 # Clean up sed backup file
