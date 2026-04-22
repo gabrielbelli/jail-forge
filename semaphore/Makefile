@@ -137,7 +137,6 @@ requirements: ## Install required Ansible collections and Python packages
 	@command -v pip >/dev/null 2>&1 || { echo "pip not found. Install with: pkg install py311-pip"; exit 1; }
 	pip install -r requirements.txt
 	ansible-galaxy collection install community.general community.postgresql
-	pip install psycopg2-binary
 
 docs: ## Show documentation
 	@echo "Documentation:"
