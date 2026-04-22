@@ -8,9 +8,16 @@ all:
     jail_hosts:
       hosts:
         bsd-host:
-          ansible_host: your-bsd-host.example.com  # Your BSD host IP or hostname
-          ansible_user: ansible  # User with passwordless sudo
           ansible_python_interpreter: /usr/local/bin/python3.11
+
+          # --- Option A: Local connection (Ansible runs on the jail host itself) ---
+          # ansible_connection: local
+          # ansible_become: true
+          # ansible_become_method: doas  # or sudo
+
+          # --- Option B: Remote connection (Ansible runs on a separate machine) ---
+          ansible_host: your-bsd-host.example.com  # Your BSD host IP or hostname
+          ansible_user: ansible  # User with passwordless sudo/doas
           ansible_ssh_private_key_file: ~/.ssh/id_rsa  # Path to your SSH private key
 
     # Virtual inventory for jails (will be created by playbooks)
