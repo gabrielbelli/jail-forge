@@ -58,7 +58,6 @@ custom_ca_dir: "/usr/local/share/certs"
 backup_location: "/var/backups/semaphore"
 backup_retention_count: 10
 backup_compress: false
-backup_zfs_snapshots: false
 
 # Additional packages
 semaphore_required_packages:

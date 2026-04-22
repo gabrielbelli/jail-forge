@@ -164,22 +164,6 @@
         mode: '0600'
 
     # =============================================================================
-    # OPTIONAL: ZFS SNAPSHOTS (for quick rollback)
-    # =============================================================================
-
-    - name: Take ZFS snapshot of database (optional - for quick rollback)
-      community.general.zfs:
-        name: "{{ zfs_pool }}/{{ jail_dataset }}/data/db@backup-{{ backup_timestamp }}"
-        state: present
-      when: backup_zfs_snapshots | default(false)
-
-    - name: Take ZFS snapshot of Semaphore (optional - for quick rollback)
-      community.general.zfs:
-        name: "{{ zfs_pool }}/{{ jail_dataset }}/data/semaphore@backup-{{ backup_timestamp }}"
-        state: present
-      when: backup_zfs_snapshots | default(false)
-
-    # =============================================================================
     # BACKUP VERIFICATION & COMPRESSION
     # =============================================================================
 
