@@ -43,7 +43,7 @@ update: ## Update Semaphore to a new version
 	@read -p "Enter new version (e.g., v2.10.0): " version; \
 	$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/update-semaphore.yml -e "semaphore_new_version=$$version"
 
-backup: ## Create data backup (IaC approach - data only)
+backup: snapshot ## Create data backup with ZFS snapshot
 	$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/backup.yml
 
 snapshot: ## Take instant ZFS snapshots (fast rollback capability)
