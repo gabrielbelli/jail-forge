@@ -47,6 +47,15 @@ semaphore_port: 3000
 # tls_existing_key_path: "/path/to/your/private.key"
 # tls_existing_ca_path: "/path/to/your/ca-bundle.crt"
 
+# Certificate file paths (used by backup/restore/verify playbooks)
+tls_cert_dir: "/usr/local/etc/ssl"
+tls_cert_file: "{{ tls_cert_dir }}/semaphore.crt"
+tls_key_file: "{{ tls_cert_dir }}/semaphore.key"
+tls_ca_file: "{{ tls_cert_dir }}/ca-bundle.crt"
+
+# Backup location
+backup_location: "/var/backups/semaphore"
+
 # =============================================================================
 # DERIVED SETTINGS (usually no need to change)
 # =============================================================================
