@@ -1,0 +1,21 @@
+name: "Test: Inherit Mode"
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_destroy:
+        description: 'Skip final cleanup'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/test-lifecycle.yml
+    with:
+      test_alias_mode: false
+      test_nat_mode: false
+      test_vnet_mode: false
+      test_inherit_mode: true
+      skip_destroy: ${{ inputs.skip_destroy }}
+    secrets: inherit
