@@ -8,23 +8,54 @@ on:
         required: false
         type: boolean
         default: false
+      test_alias_mode:
+        description: 'Test alias mode (deploy, verify, idempotency, update, backup/restore, DR)'
+        required: false
+        type: boolean
+        default: true
       test_nat_mode:
-        description: 'Also test NAT networking mode after alias mode'
+        description: 'Test NAT networking mode'
         required: false
         type: boolean
-        default: true
+        default: false
       test_vnet_mode:
-        description: 'Also test VNET networking mode after NAT mode'
+        description: 'Test VNET networking mode'
         required: false
         type: boolean
-        default: true
+        default: false
       test_inherit_mode:
-        description: 'Also test inherit (nested jail) networking mode'
+        description: 'Test inherit (nested jail) networking mode'
         required: false
         type: boolean
-        default: true
+        default: false
       update_version:
         description: 'Semaphore version for update test (empty = redeploy same version)'
+        required: false
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      skip_destroy:
+        required: false
+        type: boolean
+        default: false
+      test_alias_mode:
+        required: false
+        type: boolean
+        default: true
+      test_nat_mode:
+        required: false
+        type: boolean
+        default: false
+      test_vnet_mode:
+        required: false
+        type: boolean
+        default: false
+      test_inherit_mode:
+        required: false
+        type: boolean
+        default: false
+      update_version:
         required: false
         type: string
         default: ''
@@ -235,6 +266,7 @@ jobs:
       # PHASE 3: Full Deployment (Alias / LAN IP mode)
       # =========================================================================
       - name: "Phase 3: Deploy all applications (alias mode)"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== Deploying $app_dir (alias network mode) ==="
@@ -251,6 +283,7 @@ jobs:
       # PHASE 4: Deployment Verification
       # =========================================================================
       - name: "Phase 4: Run verification playbook"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== Running make verify for $app_dir ==="
@@ -260,6 +293,7 @@ jobs:
           done
 
       - name: "Phase 4: Verify jails are running"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
           cd "$first_app_dir"
@@ -267,6 +301,7 @@ jobs:
           ansible -b -i inventory/hosts.yml jail_hosts -m shell -a "jls -v"
 
       - name: "Phase 4: Health check — services, ports, HTTPS, TLS, database"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
             app_name=$(echo "$app" | jq -r '.name')
@@ -323,6 +358,7 @@ jobs:
           done
 
       - name: "Phase 4: Diagnostic — verify admin user exists in database"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
             app_dir=$(echo "$app" | jq -r '.working_dir')
@@ -337,6 +373,7 @@ jobs:
           done
 
       - name: "Phase 4: Health check — API authentication (valid credentials)"
+        if: ${{ inputs.test_alias_mode }}
         continue-on-error: true
         run: |
           echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
@@ -394,6 +431,7 @@ jobs:
       # PHASE 5: Idempotency Test
       # =========================================================================
       - name: "Phase 5: Idempotency — redeploy all applications"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== Idempotency test: redeploying $app_dir ==="
@@ -403,6 +441,7 @@ jobs:
           done
 
       - name: "Phase 5: Idempotency — verify after redeploy"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             cd "$app_dir"
@@ -414,6 +453,7 @@ jobs:
       # PHASE 6: Version Update Test
       # =========================================================================
       - name: "Phase 6: Update Semaphore version"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             cd "$app_dir"
@@ -432,6 +472,7 @@ jobs:
           done
 
       - name: "Phase 6: Verify after version update"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             cd "$app_dir"
@@ -443,6 +484,7 @@ jobs:
       # PHASE 7: Backup & Restore Cycle
       # =========================================================================
       - name: "Phase 7: Create ZFS snapshots"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== Creating ZFS snapshot for $app_dir ==="
@@ -452,6 +494,7 @@ jobs:
           done
 
       - name: "Phase 7: Create first backup"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== Creating first backup for $app_dir ==="
@@ -461,9 +504,11 @@ jobs:
           done
 
       - name: "Phase 7: Wait between backups (unique timestamps)"
+        if: ${{ inputs.test_alias_mode }}
         run: sleep 2
 
       - name: "Phase 7: Create second backup"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== Creating second backup for $app_dir ==="
@@ -473,6 +518,7 @@ jobs:
           done
 
       - name: "Phase 7: List and verify backups"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
             app_name=$(echo "$app" | jq -r '.name')
@@ -500,6 +546,7 @@ jobs:
           done
 
       - name: "Phase 7: Restore from most recent backup"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
             app_name=$(echo "$app" | jq -r '.name')
@@ -526,6 +573,7 @@ jobs:
           done
 
       - name: "Phase 7: Verify after restore"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== Post-restore verification for $app_dir ==="
@@ -535,6 +583,7 @@ jobs:
           done
 
       - name: "Phase 7: Post-restore API authentication check"
+        if: ${{ inputs.test_alias_mode }}
         continue-on-error: true
         run: |
           echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
@@ -592,6 +641,7 @@ jobs:
       # PHASE 8: Destroy & Disaster Recovery (Alias mode)
       # =========================================================================
       - name: "Phase 8: Graceful destroy"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== Graceful destroy for $app_dir ==="
@@ -603,6 +653,7 @@ jobs:
           done
 
       - name: "Phase 8: Verify jails are stopped"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
           cd "$first_app_dir"
@@ -625,6 +676,7 @@ jobs:
           fi
 
       - name: "Phase 8: Verify configuration removed"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
           cd "$first_app_dir"
@@ -633,6 +685,7 @@ jobs:
             -a "ls -la /usr/local/etc/jail.conf.d/semaphore-*.conf 2>/dev/null || echo 'No jail configs found (expected)'"
 
       - name: "Phase 8: Verify backups survived destroy"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
             app_dir=$(echo "$app" | jq -r '.working_dir')
@@ -652,6 +705,7 @@ jobs:
           done
 
       - name: "Phase 8: DR — rebuild infrastructure from scratch"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== DR Phase 1: Redeploying $app_dir ==="
@@ -661,6 +715,7 @@ jobs:
           done
 
       - name: "Phase 8: DR — restore data from backup"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
             app_name=$(echo "$app" | jq -r '.name')
@@ -687,6 +742,7 @@ jobs:
           done
 
       - name: "Phase 8: DR — verify after disaster recovery"
+        if: ${{ inputs.test_alias_mode }}
         run: |
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "=== Post-DR verification for $app_dir ==="
@@ -696,6 +752,7 @@ jobs:
           done
 
       - name: "Phase 8: DR — post-recovery API authentication"
+        if: ${{ inputs.test_alias_mode }}
         continue-on-error: true
         run: |
           echo '${{ env.APPS_JSON }}' | jq -c '.[]' | while IFS= read -r app; do
@@ -753,6 +810,7 @@ jobs:
       # PHASE 9: Alias Mode Cleanup
       # =========================================================================
       - name: "Phase 9: Destroy all (alias mode cleanup)"
+        if: ${{ inputs.test_alias_mode && !inputs.skip_destroy }}
         run: |
           first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
           echo "Cleaning up alias mode deployment..."
@@ -762,6 +820,7 @@ jobs:
             -e confirm_destroy_all=destroy-everything
 
       - name: "Phase 9: Verify alias mode cleanup"
+        if: ${{ inputs.test_alias_mode && !inputs.skip_destroy }}
         run: |
           first_app_dir=$(echo '${{ env.APPS_JSON }}' | jq -r '.[0].working_dir')
           cd "$first_app_dir"
@@ -784,7 +843,7 @@ jobs:
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "Switching $app_dir to NAT network mode..."
             # Replace alias with nat in vars.yml
-            sed 's/jail_network_mode: "alias"/jail_network_mode: "nat"/' \
+            sed 's/jail_network_mode: .*/jail_network_mode: "nat"/' \
               "$app_dir/group_vars/all/vars.yml" > /tmp/vars_nat.yml
             mv /tmp/vars_nat.yml "$app_dir/group_vars/all/vars.yml"
             # Verify the change
@@ -1034,7 +1093,7 @@ jobs:
           for app_dir in $(echo '${{ env.APPS_JSON }}' | jq -r '.[].working_dir'); do
             echo "Switching $app_dir to VNET network mode..."
             # Replace nat with vnet in vars.yml
-            sed 's/jail_network_mode: "nat"/jail_network_mode: "vnet"/' \
+            sed 's/jail_network_mode: .*/jail_network_mode: "vnet"/' \
               "$app_dir/group_vars/all/vars.yml" > /tmp/vars_vnet.yml
             mv /tmp/vars_vnet.yml "$app_dir/group_vars/all/vars.yml"
             # Verify the change
