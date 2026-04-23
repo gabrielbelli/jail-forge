@@ -28,6 +28,37 @@ semaphore_admin_password: changeme
 semaphore_service_user: semaphore
 semaphore_service_group: semaphore
 
+# TLS/SSL defaults
+tls_enabled: true
+tls_cert_strategy: "generate"
+tls_cert_lifetime_days: 3650
+tls_cert_key_size: 4096
+tls_cert_country: "US"
+tls_cert_state: "State"
+tls_cert_locality: "City"
+tls_cert_organization: "Organisation"
+tls_cert_organizational_unit: "IT"
+tls_cert_common_name: "localhost"
+tls_cert_email: "admin@example.com"
+tls_cert_san: []
+tls_cert_dir: "/usr/local/etc/ssl"
+tls_cert_file: "{{ tls_cert_dir }}/semaphore.crt"
+tls_key_file: "{{ tls_cert_dir }}/semaphore.key"
+tls_ca_file: "{{ tls_cert_dir }}/ca-bundle.crt"
+tls_existing_cert_path: ""
+tls_existing_key_path: ""
+tls_existing_ca_path: ""
+
+# Custom CA certificates
+custom_ca_enabled: false
+custom_ca_certificates: []
+custom_ca_dir: "/usr/local/share/certs"
+
+# Backup defaults
+backup_location: "/var/backups/semaphore"
+backup_retention_count: 10
+backup_compress: false
+
 # Additional packages
 semaphore_required_packages:
   - git

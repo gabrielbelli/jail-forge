@@ -1,154 +1,87 @@
 ---
-# Non-sensitive global variables
-# These are not encrypted and can be committed to git
+# Semaphore Deployment Configuration
+# Only settings you need to review are in this file.
+# Advanced options can be overridden — see roles/*/defaults/main.yml
 
 # =============================================================================
 # VERSIONS
 # =============================================================================
 semaphore_version: "v2.16.37"
 postgres_version: "15"
-# =============================================================================
-# BACKUP RETENTION
-# =============================================================================
-# Backup location (BSD standard: /var/backups)
-backup_location: "/var/backups/semaphore"
-
-# Age-based retention (optional): Remove backups older than N days
-# backup_retention_days: 30
-
-# Count-based retention (optional): Keep only the last N backups
-# Recommended: 7 for daily backups (1 week), 30 for hourly backups (1 day+)
-backup_retention_count: 10
-
-# Compress full backup archives (optional)
-backup_compress: false
-
-# Create ZFS snapshots alongside backups for quick rollback (optional)
-backup_zfs_snapshots: false
 
 # =============================================================================
-# TLS/SSL CERTIFICATE CONFIGURATION
+# SYSTEM
+# =============================================================================
+freebsd_version: "13.5-RELEASE"  # Match your host: freebsd-version
+freebsd_arch: "amd64"
+zfs_pool: "zroot"                # Find yours: zpool list
+jail_dataset: "jails"
+
+# =============================================================================
+# NETWORK
 # =============================================================================
 
-# Certificate management strategy
-# Options: "generate" | "existing"
+# Network mode: "alias" | "nat" | "vnet" | "inherit"
+jail_network_mode: "alias"
+
+# Host network interface (find yours: ifconfig)
+jail_interface: "em0"
+
+# Loopback interface for NAT mode
+jail_nat_interface: "lo1"
+
+# Jail IP addresses (pick two free IPs on your subnet)
+jail_ip_database: "192.168.1.50"
+jail_ip_semaphore: "192.168.1.51"
+
+# Subnet and gateway
+jail_network_cidr: "192.168.1.0/24"
+jail_gateway: "192.168.1.1"
+
+# Semaphore port
+semaphore_port: 3000
+
+# =============================================================================
+# TLS (defaults generate a self-signed certificate — no changes needed)
+# =============================================================================
 tls_cert_strategy: "generate"
-
-# Generate self-signed certificates (when tls_cert_strategy: "generate")
-tls_cert_lifetime_days: 3650  # 10 years for self-signed
-tls_cert_key_size: 4096       # RSA key size
-
-# Certificate details
-tls_cert_country: "US"
-tls_cert_state: "State"
-tls_cert_locality: "City"
-tls_cert_organization: "Your Organization"
-tls_cert_organizational_unit: "IT"
-tls_cert_common_name: "semaphore.example.com"
-tls_cert_email: "admin@example.com"
-
-# Enable/disable TLS (recommended: true)
-tls_enabled: true
-
-# Subject Alternative Names (SANs) for certificate
-tls_cert_san:
-  - "DNS:semaphore.example.com"
-  - "DNS:*.example.com"
-  - "IP:192.168.1.51"  # Update with your jail IP
-
-# Pre-existing TLS certificate paths (when tls_cert_strategy: "existing")
-# These files will be copied from your control machine to the Semaphore jail
-tls_existing_cert_path: "/path/to/your/certificate.crt"
-tls_existing_key_path: "/path/to/your/private.key"
-tls_existing_ca_path: "/path/to/your/ca-bundle.crt"  # Optional
-
-# Certificate file paths on the Semaphore jail
+tls_cert_lifetime_days: 3650
 tls_cert_dir: "/usr/local/etc/ssl"
 tls_cert_file: "{{ tls_cert_dir }}/semaphore.crt"
 tls_key_file: "{{ tls_cert_dir }}/semaphore.key"
 tls_ca_file: "{{ tls_cert_dir }}/ca-bundle.crt"
 
-# =============================================================================
-# CUSTOM CA CERTIFICATES (for LDAPS, etc.)
-# =============================================================================
-
-# Import custom CA certificates into the jail's trust store
-# This is required for LDAPS with self-signed CAs, or any service using custom CAs
-custom_ca_enabled: false
-
-# List of CA certificate files to import
-# These files should exist on your control machine and will be copied to the jail
-custom_ca_certificates: []
-  # - path: "/path/to/ldap-ca.crt"
-  #   name: "ldap-ca"
-  # - path: "/path/to/another-ca.crt"
-  #   name: "another-ca"
-
-# CA certificates directory in jail
-custom_ca_dir: "/usr/local/share/certs"
+# To use your own certificates instead, set:
+# tls_cert_strategy: "existing"
+# tls_existing_cert_path: "/path/to/your/certificate.crt"
+# tls_existing_key_path: "/path/to/your/private.key"
+# tls_existing_ca_path: "/path/to/your/ca-bundle.crt"
 
 # =============================================================================
-# NETWORK CONFIGURATION
+# BACKUP
 # =============================================================================
-
-# Network mode: "alias", "nat", "vnet", or "inherit"
-#   alias   - Jail IPs are aliases on the host interface (must be on same subnet as host)
-#   nat     - Jails use a private loopback, pf handles NAT and port forwarding
-#   vnet    - Jails with isolated network stack (most advanced, requires bridge interface)
-#   inherit - Jails share parent's network stack (for nested jail deployments, skips pf)
-jail_network_mode: "alias"
-
-# Host network interface (em0, igb0, vtnet0, etc.)
-jail_interface: "em0"
-
-# Loopback interface for NAT mode (only used when jail_network_mode: "nat")
-jail_nat_interface: "lo1"
-
-# Bridge interface for VNET mode (only used when jail_network_mode: "vnet")
-# jail_bridge_interface: "bridge0"  # Optional, defaults to bridge0
-
-# Network settings
-#   Alias mode: use IPs from your LAN subnet (same as host)
-#   NAT mode:   use any private range (e.g. 10.0.0.0/24, 172.16.0.0/24)
-#   VNET mode:  use any private range (bridge handles connectivity)
-jail_network_cidr: "192.168.1.0/24"
-jail_gateway: "192.168.1.1"          # Only used in alias mode
-
-# Jail IP addresses
-jail_ip_database: "192.168.1.50"
-jail_ip_semaphore: "192.168.1.51"
-
-# Semaphore port (default: 3000)
-# In NAT mode, this port is forwarded from the host to the semaphore jail
-semaphore_port: 3000
+backup_location: "/var/backups/semaphore"
+backup_retention_count: 10
 
 # =============================================================================
-# PF FIREWALL RULES
+# DERIVED SETTINGS (usually no need to change)
 # =============================================================================
-# These lists drive the shared pf.conf.j2 template.
-# Each app defines its own jail IPs, port forwards, and inter-jail rules.
 
-# All jail IPs (used for NAT source and outbound rules)
+# PF firewall rules (derived from IPs and port above)
 pf_jail_ips:
   - "{{ jail_ip_database }}"
   - "{{ jail_ip_semaphore }}"
 
-# Port forwards: host port -> jail (NAT mode only)
 pf_port_forwards:
   - { port: "{{ semaphore_port }}", jail_ip: "{{ jail_ip_semaphore }}" }
 
-# Inbound rules: allow external traffic to jail services (alias mode)
 pf_inbound_rules:
   - { jail_ip: "{{ jail_ip_semaphore }}", port: "{{ semaphore_port }}", proto: "tcp" }
 
-# Inter-jail rules: allow traffic between jails on specific ports (alias mode)
 pf_inter_jail_rules:
   - { from_ip: "{{ jail_ip_semaphore }}", to_ip: "{{ jail_ip_database }}", port: 5432, proto: "tcp" }
 
-# =============================================================================
-# SYSTEM CONFIGURATION
-# =============================================================================
-freebsd_version: "13.5-RELEASE"  # Or your FreeBSD version
-freebsd_arch: "amd64"
-zfs_pool: "zroot"                # Or your ZFS pool name
-jail_dataset: "jails"
+# TLS certificate details (used when generating self-signed certs)
+tls_cert_common_name: "{{ jail_ip_semaphore }}"
+tls_cert_san:
+  - "IP:{{ jail_ip_semaphore }}"
