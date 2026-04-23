@@ -39,22 +39,26 @@ jail_gateway: "192.168.1.1"
 semaphore_port: 3000
 
 # =============================================================================
-# TLS (optional — defaults generate a self-signed certificate)
+# TLS (defaults generate a self-signed certificate — no changes needed)
 # =============================================================================
-# To use your own certificates, uncomment and set:
-# tls_cert_strategy: "existing"
-# tls_existing_cert_path: "/path/to/your/certificate.crt"
-# tls_existing_key_path: "/path/to/your/private.key"
-# tls_existing_ca_path: "/path/to/your/ca-bundle.crt"
-
-# Certificate file paths (used by backup/restore/verify playbooks)
+tls_cert_strategy: "generate"
+tls_cert_lifetime_days: 3650
 tls_cert_dir: "/usr/local/etc/ssl"
 tls_cert_file: "{{ tls_cert_dir }}/semaphore.crt"
 tls_key_file: "{{ tls_cert_dir }}/semaphore.key"
 tls_ca_file: "{{ tls_cert_dir }}/ca-bundle.crt"
 
-# Backup location
+# To use your own certificates instead, set:
+# tls_cert_strategy: "existing"
+# tls_existing_cert_path: "/path/to/your/certificate.crt"
+# tls_existing_key_path: "/path/to/your/private.key"
+# tls_existing_ca_path: "/path/to/your/ca-bundle.crt"
+
+# =============================================================================
+# BACKUP
+# =============================================================================
 backup_location: "/var/backups/semaphore"
+backup_retention_count: 10
 
 # =============================================================================
 # DERIVED SETTINGS (usually no need to change)
