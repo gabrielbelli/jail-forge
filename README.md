@@ -2,11 +2,26 @@
 
 > ## Deprecated — use [oci-jails](https://github.com/gabrielbelli/oci-jails) instead
 >
-> FreeBSD 14.2 began publishing OCI container images, and a FreeBSD 15.1 host now
-> runs a complete container stack — `podman`, `ocijail`, `catatonit` — that does
-> natively what jail-forge automated with Ansible. An OCI container on FreeBSD
-> **is** a jail, so little is given up by moving: the same kernel isolation, now
-> with images, compose files and `podman kube play` instead of playbooks.
+> I built jail-forge because I wanted a Docker-like experience on FreeBSD. That
+> now exists in the base system: FreeBSD 14.2 began publishing OCI images, and a
+> 15.1 host runs `podman` with `ocijail` natively. An OCI container on FreeBSD
+> **is** a jail, so it is the same isolation — reached with images, compose files
+> and `podman kube play` instead of playbooks.
+>
+> Most of what is in this repository turns out to be scaffolding around a single
+> problem: **rebuilding a jail was expensive**. That is why there are backup,
+> restore, snapshot and disaster-recovery playbooks, and a twelve-phase CI job
+> that destroys everything and builds it back to prove they work. With an image
+> none of that is needed — the image *is* the reproducible infrastructure, and
+> "rebuild from scratch" is `podman run`.
+>
+> State does not disappear, it moves. The container is disposable and the volume
+> is not, so what you have to protect shrinks from a whole jail to one directory.
+> That is the part worth carrying forward, and it is a paragraph rather than a
+> playbook.
+>
+> So this is not a failed project. It asked for containers on FreeBSD, and
+> FreeBSD shipped them.
 >
 > **[oci-jails](https://github.com/gabrielbelli/oci-jails)** is where the work
 > continues — FreeBSD OCI images, a catalogue of where to find more of them, and
@@ -14,17 +29,9 @@
 > container hostnames and DNS, compose, kube, registries and day-two operations,
 > cited to the FreeBSD Handbook throughout.
 >
-> **What does not carry over.** jail-forge did per-application lifecycle
-> automation — deploy, backup, restore, snapshot, disaster recovery — and shipped
-> a Semaphore deployment with a PostgreSQL backend. oci-jails does not replace
-> that: it documents ZFS snapshots and `podman save`/`load` rather than
-> automating them, and publishes no Semaphore or PostgreSQL image. If you rely on
-> that automation, this repository still works — it is unmaintained, not broken.
-> [BastilleBSD](https://bastillebsd.org/) and
-> [AppJail](https://github.com/DtxdF/AppJail) remain actively developed options
-> for jail-native deployment.
->
-> No further changes are planned here.
+> Nothing here is being deleted, and the code still works — it is unmaintained
+> rather than broken. The Semaphore deployment in particular is complete and was
+> CI-tested across alias and NAT networking. No further changes are planned.
 
 **Production-ready FreeBSD jail deployments with Ansible**
 
